@@ -1,28 +1,28 @@
 # ============================================================
-# SSL & 이벤트 루프 패치 (무조건 제일 위)
+# ★★★★★ SSL 인증서 완전 박멸 (최상단) ★★★★★
 # ============================================================
 import ssl
 import os
 import sys
 import asyncio
+import aiohttp
 
+# 1. 파이썬 기본 SSL 검증 완전 죽이기
 ssl._create_default_https_context = ssl._create_unverified_context
 os.environ['PYTHONHTTPSVERIFY'] = '0'
 os.environ['SSL_CERT_FILE'] = ''
 os.environ['REQUESTS_CA_BUNDLE'] = ''
 
+# 2. urllib3 경고 제거
 try:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 except:
     pass
 
-try:
-    import aiohttp
-    # aiohttp가 ssl.create_default_context를 호출하므로, 그 함수를 unverified로 교체
-    ssl.create_default_context = ssl._create_unverified_context
-except:
-    pass
+# 3. aiohttp의 기본 SSL 컨텍스트를 unverified로 교체
+#    (이렇게 하면 aiohttp가 내부적으로 ssl.create_default_context를 호출해도 안전)
+ssl.create_default_context = ssl._create_unverified_context
 # ============================================================
 
 import winreg
@@ -1863,14 +1863,21 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ============================================================
-# ★★★★★ 실행 ★★★★★
+# ★★★★★ 최종 실행부 (SSL 완전 차단) ★★★★★
 # ============================================================
 if __name__ == "__main__":
-    # 이벤트 루프가 없으면 강제로 생성 (aiohttp가 찾을 수 있도록)
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # aiohttp 커넥터를 SSL False로 강제 생성
+    # bot.run() 전에 bot.http._session을 교체
+    connector = aiohttp.TCPConnector(ssl=False)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(bot.http._connect(connector))  # 없어도 됨, 그냥 세션 없이 run
+    # 하지만 간단히: bot.http._session = aiohttp.ClientSession(connector=connector)
+    # 이렇게 직접 할당
+    async def set_session():
+        bot.http._session = aiohttp.ClientSession(connector=connector)
+    loop.run_until_complete(set_session())
+    loop.close()
     
+    # 이제 bot.run 실행 (내부에서 새 이벤트 루프 생성)
     bot.run(token)
